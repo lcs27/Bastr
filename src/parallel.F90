@@ -1,0 +1,3260 @@
+!+---------------------------------------------------------------------+
+!| This module contains subroutines relating to parallelisation.       |
+!+---------------------------------------------------------------------+
+!| CHANGE RECORD                                                       |
+!| -------------                                                       |
+!| 06-02-2021  | Created by J. Fang                                    |
+!+---------------------------------------------------------------------+
+module parallel
+  !
+  use mpi
+  use commvar,   only : im,jm,km,ia,ja,ka,lihomo,ljhomo,lkhomo,     &
+                        npdci,npdcj,npdck,lfftk,lreport,ltimrpt
+  use stlaio,    only : get_unit
+  !
+  implicit none
+  !
+  interface bcast
+    module procedure bcast_cha
+    module procedure bcast_chafix_ary
+    module procedure bcast_int
+    module procedure bcast_r8
+    module procedure bcast_log
+    module procedure bcast_int_ary
+    module procedure bcast_int_ary2
+    module procedure bcast_int_ary3
+    module procedure bcast_r8_ary
+    module procedure bcast_r8_ary_allo
+    module procedure bcast_r8_ary2
+    module procedure bcast_r8_ary3
+    !
+    module procedure bcast_solid_ary
+  end interface
+  !
+  !
+  !
+  interface pmerg
+    module procedure pmerg_sbou
+  end interface
+  !
+  interface psuperpose
+    module procedure psuperpose_int_ary1d
+  end interface psuperpose
+  !
+  interface psum
+    module procedure psum_int
+    module procedure psum_int_ary
+    module procedure psum_int_ary2d
+    module procedure psum_r8
+    module procedure psum_r8_ary
+    module procedure psum_r8_ary_2d
+    module procedure psum_r8_ary_3d
+  end interface
+  !
+  interface pmax
+    module procedure pmax_int
+    module procedure pmax_int4_array1d
+    module procedure pmax_int8
+    module procedure pmax_int8_array1d
+    module procedure pmax_r8
+    module procedure pmax_r8_array2d
+    module procedure pmax_r8_array3d
+  end interface
+  !
+  interface pmin
+    module procedure pmin_int
+    module procedure pmin_r8
+  end interface
+  !
+  interface por
+    module procedure por_log
+    module procedure por_log_array1d
+  end interface
+  !
+  interface ptabupd
+    module procedure updatable_int
+    module procedure updatable_int_a2a_v
+    module procedure updatable_rel_a2a_v
+    module procedure updatable_rel2d_a2a_v
+  end interface
+  !
+  interface pgather
+    module procedure pgather_rel2d_array_rank
+    module procedure pgather_rel2d_array
+    module procedure pgather_rel1d_array
+    module procedure pgather_int2d_array
+    module procedure pgather_int1d_array
+    module procedure pgather_int
+    module procedure pgather_int_comm
+    module procedure pgather_cha1_array
+  end interface
+  !
+  !
+  interface pscatter
+    module procedure pscatter_rel2d
+  end interface
+  !
+  interface rmdup
+     module procedure rmdup_i4
+     module procedure rmdup_i4_2d
+  end interface
+  !
+  interface msize
+    module procedure size_integer
+  end interface
+  !
+  integer :: mpirank,mpisize,mpirankmax
+  integer :: isize,jsize,ksize,irkm,jrkm,krkm,irk,jrk,krk,ig0,jg0,kg0
+  integer :: mpileft,mpiright,mpidown,mpiup,mpifront,mpiback,mpitag
+  character(len=8) :: mpirankname
+  logical :: lio
+  integer :: status(mpi_status_size) 
+  integer :: mpi_imin,mpi_imax,mpi_jmin,mpi_jmax
+  integer :: irk_islice,jrk_jslice,krk_kslice
+  integer :: mpi_islice,mpi_jslice,mpi_kslice
+  integer :: mpi_ibcom,cartcomm
+  integer,allocatable :: mpi_ikgroup(:)
+  integer :: mpi_igroup,mpi_jgroup,mpi_kgroup
+  integer :: mpi_group_test
+  character(mpi_max_processor_name) :: processor_name
+  !
+  contains
+  !
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! this subroutine is used to initial the mpi environment.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! writen by fang jian, 2010-08-26.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  subroutine mpiinitial
+    !
+    use commvar, only : preptime
+    !
+    integer :: ierr,namelen
+    !
+    call mpi_init(ierr)
+    !
+    call mpi_comm_rank(mpi_comm_world,mpirank,ierr)
+    ! get rank number
+    call mpi_comm_size(mpi_comm_world,mpisize,ierr)
+    ! get total number of nodes
+    call mpi_get_processor_name(processor_name,namelen,ierr)
+    ! ger processor names
+    mpirankmax=mpisize-1
+    !
+    if(mpisize==1) then
+      print*,' ** the program is working in serial environment!'
+      mpirank=0
+    else
+      if(mpirank==0)  then
+        write(*,'(A,I0,A)')' ** the program is working with ',mpisize, &
+                                                                ' ranks'
+      endif
+      !
+      call mpi_barrier(mpi_comm_world,ierr)
+      !
+    end if
+    !
+    mpitag=100
+    !
+    preptime=ptime()
+    !
+    call mpi_barrier(mpi_comm_world,ierr)
+    !
+    ! print*,' ** rank',mpirank,'is on processor',processor_name
+    !
+  end subroutine mpiinitial
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! The end of the subroutine mpiinitial
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! This subroutine is used to assign the distributions size on the ranks
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! Writen by Fang Jian, 2013-7-19.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  subroutine mpisizedis
+    !
+    logical :: lallo
+    integer :: nfactor(1:mpisize)
+    integer :: i,j,k,n,n1,n2,n3,nsize,kaa
+    integer(8) :: nvar1,nvar2,nvar3
+    !
+    integer :: ndims
+    !
+    if(ja==0 .and. ka==0) then
+      ndims=1
+    elseif(ka==0) then
+      ndims=2
+    else
+      ndims=3
+    endif
+    !
+    if(ka==0) then 
+      kaa=ka+1
+    else
+      kaa=ka
+    endif
+    !
+    if(mpirank==0) then
+      !
+      write(*,'(A,I0)')'  ** dimension of domain: ',ndims
+      !
+      lallo=.false.
+      !
+      nvar2=2**30
+      !
+      if(mpisize>2**30) then
+        print*,' !! Number of processors is too large.'
+        stop
+      end if
+      !
+      ! if(ndims==3 .and. mpisize<8) then
+      !   print*,' !! minimal 8 ranks required for 3-D simulations'
+      !   stop
+      ! endif
+      ! !
+      ! if(ndims==2 .and. mpisize<4) then
+      !   print*,' !! minimal 4 ranks required for 2-D simulations'
+      !   stop
+      ! endif
+      ! !
+      ! if(ndims==1 .and. mpisize<2) then
+      !   print*,' !! minimal 2 ranks required for 1-D simulations'
+      !   stop
+      ! endif
+      !
+      if(mpisize==1) then
+        !
+        isize=1
+        jsize=1
+        ksize=1
+        !
+      else
+        !
+        n=0
+        do i=1,mpisize
+          !
+          if(mod(mpisize,i)==0) then
+            n=n+1
+            nfactor(n)=mpisize/i
+          end if
+          !
+        end do
+        print*,' ** Number of factor is ',n
+        !
+        do n1=1,n
+        do n2=1,n
+        do n3=1,n
+          !
+          !
+          if(ndims==1) then
+            !
+            nsize=nfactor(n1)*nfactor(n2)*nfactor(n3)
+            !
+            if(nfactor(n2) .ne. 1) cycle
+            if(nfactor(n3) .ne. 1) cycle
+            !
+            ! print*,n1,n2,n3,'|',nfactor(n1),nfactor(n2),nfactor(n3)
+          elseif(ndims==2 .or. lfftk) then
+            !
+            nsize=nfactor(n1)*nfactor(n2)*nfactor(n3)
+            if(nfactor(n3) .ne. 1) cycle
+            if(nfactor(n2) == 1) cycle
+            ! if(nfactor(n1) == 1) cycle
+            !
+          else
+            !
+            if(nfactor(n3)>=1 .and. nfactor(n2)>=1 .and. nfactor(n1)>=1) then
+              nsize=nfactor(n1)*nfactor(n2)*nfactor(n3)
+            else
+             ! for 3D  calculation, the mpisize at k direction should not
+             ! be 1
+             cycle
+            end if
+            !
+          end if
+          !
+          if(nsize .eq. mpisize) then
+            !
+            nvar1=int(ja,8)*int(kaa,8)*int(nfactor(n1),8)
+            !
+            nvar1=nvar1+int(ia,8)*int(kaa,8)*int(nfactor(n2),8)
+            !
+            nvar1=nvar1+int(ia,8)*int(ja,8)*int(nfactor(n3),8)
+            !
+            ! print*,nvar1,nvar2,'-',nfactor(n1),nfactor(n2),nfactor(n3)
+            !
+            if(nvar1<nvar2) then
+              !
+              nvar2=nvar1
+              !
+              isize=nfactor(n1)
+              jsize=nfactor(n2)
+              ksize=nfactor(n3)
+              !
+              print*,' ** isze,jsize,ksize= ',isize,jsize,ksize
+              !
+              lallo=.true.
+              !
+            end if
+            !
+          end if
+          !
+        end do
+        end do
+        end do
+        !
+        if(.not. lallo) then
+          !
+          print*,' !! Size of ranks can not be allocated !!'
+          stop
+          !
+        end if
+        !
+      endif
+      !
+      write(*,'(3(A,I0))')'  ** mpi size= ',isize,' x ',jsize,' x ',ksize
+      !
+    end if
+    !
+  end subroutine mpisizedis
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! The end of the subroutine mpisizedis
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! This subroutine is used to preprocess the input file to generate
+  ! files for each process.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! Writen by Fang Jian, 2010-08-26.
+  ! Improved by Fang Jian, 2013-07-24.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  subroutine parapp
+    !
+    integer, allocatable, dimension(:,:,:) :: imp,jmp,kmp
+    integer :: ierr,nproc
+    integer :: n,n1,n2
+    integer :: nsi,nsj,nsk,fh
+    !
+    ! integer :: n,n1,n2,ns,i2,j2,k2,nar1,nsi,nsj,nsk,ina,jna,kna
+    ! integer :: ispa,jspa,kspa
+    ! real(8) :: var1
+    ! character(len=32) :: cmdcptemp
+    ! !
+    ! !
+    if(mpirank==0) then
+      !
+      nproc=isize*jsize*ksize
+      !
+      irkm=isize-1
+      jrkm=jsize-1
+      krkm=ksize-1
+      !
+      if(nproc .ne. mpisize) then
+        print*,' !! error!, nproc /= mpisize !!'
+        print*,' ** nproc=',nproc
+        print*,' ** mpisize=',mpisize
+        stop
+      end if
+      !
+      ! allocate block size for each rank
+      allocate( imp(0:isize-1,0:jsize-1,0:ksize-1),                  &
+                jmp(0:isize-1,0:jsize-1,0:ksize-1),                  &
+                kmp(0:isize-1,0:jsize-1,0:ksize-1)                   )
+      !
+      n1=ia/isize
+      n2=mod(ia,isize)
+      !
+      do n=0,isize-1
+        imp(n,:,:)=n1
+      end do
+      !
+      if(n2 .ne. 0) then
+        !
+        do n=isize-1,isize-n2,-1
+          imp(n,:,:)=imp(n,:,:)+1
+        end do
+        !
+      end if
+      !
+      n1=ja/jsize
+      n2=mod(ja,jsize)
+      !
+      do n=0,jsize-1
+        jmp(:,n,:)=n1
+      end do
+      !
+      if(n2 .ne. 0) then
+        !
+        do n=jsize-1,jsize-n2,-1
+          jmp(:,n,:)=jmp(:,n,:)+1
+        end do
+        !
+      end if
+      !
+      n1=ka/ksize
+      n2=mod(ka,ksize)
+      !
+      do n=0,ksize-1
+        kmp(:,:,n)=n1
+      end do
+      !
+      if(n2 .ne. 0) then
+        !
+        do n=ksize-1,ksize-n2,-1
+          kmp(:,:,n)=kmp(:,:,n)+1
+        end do
+        !
+      end if
+      !
+      fh=get_unit()
+      !
+      open(fh,file='datin/parallel.info',form='formatted')
+      write(fh,"(3(A9,1x))")'isize','jsize','ksize'
+      write(fh,"(3(I9,1x))")isize,jsize,ksize
+      write(fh,"(10(A9,1x))")'Rank','Irk','Jrk','Krk','IM','JM','KM',  &
+                                                      'I0','J0','K0'
+      nsi=0
+      nsj=0
+      nsk=0
+      do krk=0,ksize-1
+      do jrk=0,jsize-1
+      do irk=0,isize-1
+        !
+        n=krk*(isize*jsize)+jrk*isize+irk
+        !
+        ! Output file of rank information.
+        write(fh,"(10(I9,1x))")n,irk,jrk,krk,imp(irk,jrk,krk),       &
+                            jmp(irk,jrk,krk),kmp(irk,jrk,krk),       &
+                            nsi,nsj,nsk
+        !
+        nsi=nsi+imp(irk,0,0)
+      enddo
+        nsi=0
+        nsj=nsj+jmp(0,jrk,0)
+      enddo
+        nsi=0
+        nsj=0
+        nsk=nsk+kmp(0,0,krk)
+      enddo
+      !
+      close(fh)
+      print*,' << parallel.info ... done !'
+      !
+    endif
+    !
+    call bcast(irkm)
+    call bcast(jrkm)
+    call bcast(krkm)
+    !
+    call bcast(isize)
+    call bcast(jsize)
+    call bcast(ksize)
+    !
+    call mpi_barrier(mpi_comm_world,ierr)
+    !
+    if(mpirank==0) print*,' ** parallel processing ... done.'
+    !
+    return
+    !
+  end subroutine parapp
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! the end of the subroutine parapp.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is to create a sub-communicator from mpiranks.    |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 12-08-2022: Created by J. Fang @ STFC Daresbury Laboratory        |
+  !+-------------------------------------------------------------------+
+  subroutine subcomm_group(rank,communicator,newrank,newsize)
+    !
+    ! arguments
+    integer,intent(in) :: rank
+    integer,intent(out) :: communicator,newrank,newsize
+    !
+    ! local data
+    integer :: group_mpi,mpi_group_world
+    integer :: ierr,ncout,jrank
+    integer,allocatable :: rank_use(:),ranktemp(:)
+    !
+    allocate(ranktemp(0:mpirankmax))
+    !
+    call pgather(rank,ranktemp)
+    !
+    ncout=0
+    do jrank=0,mpirankmax
+      !
+      if(ranktemp(jrank)>=0) then
+        ncout=ncout+1
+      endif
+      !
+    enddo
+    !
+    allocate(rank_use(1:ncout))
+    !
+    ncout=0
+    do jrank=0,mpirankmax
+      !
+      if(ranktemp(jrank)>=0) then
+        ncout=ncout+1
+        !
+        rank_use(ncout)=ranktemp(jrank)
+        !
+      endif
+      !
+    enddo
+    !
+    call mpi_comm_group(mpi_comm_world,mpi_group_world,ierr)
+    call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+    call mpi_comm_create(mpi_comm_world,group_mpi,communicator,ierr)
+    !
+    if(any(rank_use==mpirank)) then
+      call mpi_comm_size(communicator,newsize,ierr)
+      call mpi_comm_rank(communicator,newrank,ierr)
+      if(newrank==0) print*,' ** new subcomm created, size: ',newsize
+      ! print*,' ** local rank:',newrank,', gloable rank:',mpirank
+    else
+      newrank=-1
+      newsize=0
+    endif
+    !
+  end subroutine subcomm_group
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine subcomm_group.                          |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is to assign sub-communicator.                    |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 25-07-2022: Created by J. Fang @ STFC Daresbury Laboratory        |
+  !+-------------------------------------------------------------------+
+  subroutine subcomm(nrank,irkg,jrkg,krkg,img,jmg,kmg,i0g,j0g,k0g)
+    !
+    use commvar,   only : islice,jslice,kslice,ndims
+    !
+    ! arguments
+    integer,intent(in) :: nrank(0:irkm,0:jrkm,0:krkm),                 &
+                          irkg(0:mpirankmax),jrkg(0:mpirankmax),       &
+                          krkg(0:mpirankmax),img(0:mpirankmax),        &
+                          jmg(0:mpirankmax),kmg(0:mpirankmax),         &
+                          i0g(0:mpirankmax),j0g(0:mpirankmax),         &
+                          k0g(0:mpirankmax)
+    !
+    ! local data
+    integer :: group_mpi,mpi_group_world
+    integer :: ni,nj,nk,n,nrk,ntest
+    integer :: newsize,ierr
+    integer :: dim_size(2)
+    logical :: periods(2),reorder
+    integer,allocatable :: rank_use(:),group_use_2d(:,:)
+    !
+    allocate(rank_use(jsize*ksize))
+    rank_use=-1
+    n=0
+    do nk=0,ksize-1
+    do nj=0,jsize-1
+      n=n+1
+      rank_use(n)=nrank(0,nj,nk)
+    end do
+    end do
+    !
+    call mpi_comm_group(mpi_comm_world,mpi_group_world,ierr)
+    call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+    call mpi_comm_create(mpi_comm_world,group_mpi,mpi_imin,ierr)
+    !
+    if(irk==0) call mpi_comm_size(mpi_imin,newsize,ierr)
+    ! if(mpirank==0) write(*,'(A,I0)') &
+    !   '  ** new communicator: mpi_imin  ... created, size: ',newsize
+    !
+    rank_use=-1
+    n=0
+    do nk=0,ksize-1
+    do nj=0,jsize-1
+      n=n+1
+      rank_use(n)=nrank(isize-1,nj,nk)
+    end do
+    end do
+    !
+    call mpi_comm_group(mpi_comm_world,mpi_group_world,ierr)
+    call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+    call mpi_comm_create(mpi_comm_world,group_mpi,mpi_imax,ierr)
+    !
+    if(irk==isize-1) call mpi_comm_size(mpi_imax,newsize,ierr)
+    ! if(mpirank==0) write(*,'(A,I0)') &
+    !   '  ** new communicator: mpi_imax  ... created, size: ',newsize
+    !
+    ! set sub communicator for islice
+    irk_islice=-1
+     !
+     do nrk=0,mpirankmax
+       !
+       if(islice>=i0g(nrk) .and. islice<i0g(nrk)+img(nrk)) then
+         irk_islice=irkg(nrk)
+         ! print*,' ** islice is at irk=',irk_islice
+         exit
+       endif
+       !
+     enddo
+     !
+    if(irk_islice>=0) then
+      !
+      rank_use=-1
+      n=0
+      do nk=0,ksize-1
+      do nj=0,jsize-1
+        n=n+1
+        rank_use(n)=nrank(irk_islice,nj,nk)
+      end do
+      end do
+      !
+      call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+      call mpi_comm_create(mpi_comm_world,group_mpi,mpi_islice,ierr)
+      if(irk==irk_islice) then
+        call mpi_comm_size(mpi_islice,newsize,ierr)
+        ! if(jrk==0 .and. krk==0) then
+        !   print*,' ** new communicator: mpi_islice  ... created, size: ',newsize
+        ! endif
+      endif
+      !
+    endif
+    !
+    deallocate(rank_use)
+    ! end of set sub communicator for islice
+    !
+    ! set sub communicator for jslice
+    allocate(rank_use(isize*ksize))
+    !
+    jrk_jslice=-1
+    !
+    do nrk=0,mpirankmax
+      !
+      if(jslice>=j0g(nrk) .and. jslice<j0g(nrk)+jmg(nrk)) then
+        jrk_jslice=jrkg(nrk)
+        ! print*,' ** jslice is at jrk=',jrk_jslice
+        exit
+      endif
+      !
+    enddo
+    !
+    if(jrk_jslice>=0) then
+      !
+      rank_use=-1
+      n=0
+      do nk=0,ksize-1
+      do ni=0,isize-1
+        n=n+1
+        rank_use(n)=nrank(ni,jrk_jslice,nk)
+      end do
+      end do
+      !
+      call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+      call mpi_comm_create(mpi_comm_world,group_mpi,mpi_jslice,ierr)
+      if(jrk==jrk_jslice) then
+        call mpi_comm_size(mpi_jslice,newsize,ierr)
+        ! if(irk==0 .and. krk==0) then
+        !   print*,' ** new communicator: mpi_jslice  ... created, size: ',newsize
+        ! endif
+      endif
+      !
+    endif
+    !
+    deallocate(rank_use)
+    ! end of set sub communicator for jslice
+    !
+    ! set sub communicator for kslice
+    allocate(rank_use(isize*jsize))
+    !
+    krk_kslice=-1
+    !
+    do nrk=0,mpirankmax
+      !
+      if(kslice>=k0g(nrk) .and. kslice<k0g(nrk)+kmg(nrk)) then
+        krk_kslice=krkg(nrk)
+        ! print*,' ** kslice is at krk=',krk_kslice
+        exit
+      endif
+      !
+    enddo
+    !
+    if(krk_kslice>=0) then
+      !
+      rank_use=-1
+      n=0
+      do nj=0,jsize-1
+      do ni=0,isize-1
+        n=n+1
+        rank_use(n)=nrank(ni,nj,krk_kslice)
+      end do
+      end do
+      !
+      call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+      call mpi_comm_create(mpi_comm_world,group_mpi,mpi_kslice,ierr)
+      if(krk==krk_kslice) then
+        call mpi_comm_size(mpi_kslice,newsize,ierr)
+        ! if(irk==0 .and. jrk==0) then
+        !   print*,' ** new communicator: mpi_kslice  ... created, size: ',newsize
+        ! endif
+      endif
+      !
+    endif
+    !
+    deallocate(rank_use)
+    ! end of set sub communicator for kslice
+    !
+    ! set sub communicator for j=0
+    allocate(rank_use(isize*ksize))
+    !
+    rank_use=-1
+    n=0
+    do nk=0,ksize-1
+    do ni=0,isize-1
+      n=n+1
+      rank_use(n)=nrank(ni,0,nk)
+    end do
+    end do
+    !
+    call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+    call mpi_comm_create(mpi_comm_world,group_mpi,mpi_jmin,ierr)
+    !
+    if(jrk==0) call mpi_comm_size(mpi_jmin,newsize,ierr)
+    ! if(mpirank==0) write(*,'(A,I0)') &
+    !   '  ** new communicator: mpi_jmin  ... created, size: ',newsize
+    ! end of set sub communicator for j=0
+    !
+    ! set sub communicator for j=jmax
+    rank_use=-1
+    n=0
+    do nk=0,ksize-1
+    do ni=0,isize-1
+      n=n+1
+      rank_use(n)=nrank(ni,jsize-1,nk)
+    end do
+    end do
+    !
+    call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+    call mpi_comm_create(mpi_comm_world,group_mpi,mpi_jmax,ierr)
+    !
+    if(jrk==jrkm) then
+      call mpi_comm_size(mpi_jmax,newsize,ierr)
+      ! if(irk==0 .and. krk==0) write(*,'(A,I0)') &
+      ! '  ** new communicator: mpi_jmax  ... created, size: ',newsize
+    endif
+    !
+    deallocate(rank_use)
+    ! end of set sub communicator for j=max
+    !
+    ! create i-k group from comm in i and k directions
+    allocate(rank_use(isize*ksize),mpi_ikgroup(0:jsize-1))
+    !
+    do nj=0,jsize-1
+      !
+      rank_use=-1
+      n=0
+      do nk=0,ksize-1
+      do ni=0,isize-1
+        n=n+1
+        rank_use(n)=nrank(ni,nj,nk)
+      end do
+      end do
+      !
+      call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+      call mpi_comm_create(mpi_comm_world,group_mpi,mpi_ikgroup(nj),ierr)
+      if(jrk==nj) then
+        call mpi_comm_size(mpi_ikgroup(nj),newsize,ierr)
+        ! if(irk==0 .and. krk==0) then
+        !   print*,' ** new communicator: mpi_ikgroup  ... created, size: ',newsize
+        ! endif
+      endif
+      !
+    enddo
+    !
+    deallocate(rank_use)
+    ! end of set i-k group
+    !
+    ! create i group from comm in j and k directions
+    allocate(rank_use(isize),group_use_2d(0:jsize-1,0:ksize-1))
+     
+    do nk=0,ksize-1
+    do nj=0,jsize-1
+      !
+      rank_use=-1
+      n=0
+      do ni=0,isize-1
+        n=n+1
+        rank_use(n)=nrank(ni,nj,nk)
+        !
+      end do
+      !
+      call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+      call mpi_comm_create(mpi_comm_world,group_mpi,group_use_2d(nj,nk),ierr)
+      !
+    enddo
+    enddo
+    !
+    mpi_igroup=group_use_2d(jrk,krk)
+    !
+    ! ntest=mpirank
+    ! !
+    ! ntest=psum(var=ntest,comm=mpi_igroup)
+    ! !
+    ! print*,mpirank,'|',ntest
+    ! print*,' new communicator: mpi_igroup:',mpi_group_test,'-',mpirank,jrk,krk
+    !
+    deallocate(rank_use,group_use_2d)
+    !
+    ! create j group from comm in i and k directions
+    allocate(rank_use(jsize),group_use_2d(0:isize-1,0:ksize-1))
+     
+    do nk=0,ksize-1
+    do ni=0,isize-1
+      !
+      rank_use=-1
+      n=0
+      do nj=0,jsize-1
+        n=n+1
+        rank_use(n)=nrank(ni,nj,nk)
+        !
+      end do
+      !
+      call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+      call mpi_comm_create(mpi_comm_world,group_mpi,group_use_2d(ni,nk),ierr)
+      !
+    enddo
+    enddo
+    !
+    mpi_jgroup=group_use_2d(irk,krk)
+    !
+    ! ntest=mpirank
+    ! !
+    ! ntest=psum(var=ntest,comm=mpi_jgroup)
+    ! !
+    ! print*,mpirank,'|',ntest
+    !
+    deallocate(rank_use,group_use_2d)
+    !
+    ! create k group from comm in i and k directions
+    allocate(rank_use(ksize),group_use_2d(0:isize-1,0:jsize-1))
+    !
+    do nj=0,jsize-1
+    do ni=0,isize-1
+      !
+      rank_use=-1
+      n=0
+      do nk=0,ksize-1
+        n=n+1
+        rank_use(n)=nrank(ni,nj,nk)
+      end do
+      !
+      call mpi_group_incl(mpi_group_world,size(rank_use),rank_use,group_mpi,ierr)
+      call mpi_comm_create(mpi_comm_world,group_mpi,group_use_2d(ni,nj),ierr)
+      !
+    enddo
+    enddo
+    !
+    mpi_kgroup=group_use_2d(irk,jrk)
+    !
+    deallocate(rank_use,group_use_2d)
+    ! end of set k group
+    !
+    if(lio) print*,' ** sub-communicators created'
+    !
+    call mpi_barrier(mpi_comm_world,ierr)
+    !
+  end subroutine subcomm
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine subcomm.                                |
+  !+-------------------------------------------------------------------+
+  !
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! This subroutine is used to initilize parallel parameters
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! Writen by Fang Jian, 2010-08-27.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  subroutine parallelini
+    !
+    use commvar,   only : is,ie,js,je,ks,ke,islice,jslice,kslice
+    !
+    ! local data
+    integer :: n,nn,nsize1,nsize,ierr,fh,ni,nj,nk,nrk
+    integer,allocatable:: ntemp(:,:),nrank(:,:,:)
+    integer,allocatable,dimension(:) :: nrect,irkg,jrkg,krkg,          &
+                                        img,jmg,kmg,i0g,j0g,k0g
+    !
+    !
+    if(mpirank>=0 .and. mpirank<=9)then
+      write(mpirankname,'(7h.000000,i1)') mpirank
+    elseif(mpirank>=10 .and. mpirank<=99)then
+      write(mpirankname,'(6h.00000,i2)') mpirank
+    elseif(mpirank>=100 .and. mpirank<=999)then
+      write(mpirankname,'(5h.0000,i3)') mpirank
+    elseif(mpirank>=1000 .and. mpirank<=9999)then
+      write(mpirankname,'(4h.000,i4)') mpirank
+    elseif(mpirank>=10000 .and. mpirank<=99999)then
+      write(mpirankname,'(3h.00,i5)') mpirank
+    elseif(mpirank>=100000 .and. mpirank<=999999)then
+      write(mpirankname,'(2h.0,i6)') mpirank
+    elseif(mpirank>=1000000 .and. mpirank<=9999999)then
+      write(mpirankname,'(1h.,i7)') mpirank
+    else
+      print *, ' !! Error: rank number not in the range [0,9999999]'
+      stop
+    end if
+    !
+    lio=.false.
+    !
+    allocate( nrank(0:irkm,0:jrkm,0:krkm) )
+    allocate( irkg(0:mpirankmax),jrkg(0:mpirankmax),                 &
+              krkg(0:mpirankmax),img(0:mpirankmax),                  &
+              jmg(0:mpirankmax),kmg(0:mpirankmax),                   &
+              i0g(0:mpirankmax),j0g(0:mpirankmax),                   &
+              k0g(0:mpirankmax)                                     )
+    !
+    if(mpirank==0) then
+      !
+      allocate( ntemp(1:11,0:mpirankmax)                               )
+      !
+      fh=get_unit()
+      open(fh,file='datin/parallel.info',form='formatted')
+      read(fh,"(//)")
+      do n=0,mpirankmax
+        !
+        read(fh,*)ntemp(1,n),ntemp(2,n),ntemp(3,n),ntemp(4,n),         &
+                  ntemp(5,n),ntemp(6,n),ntemp(7,n),ntemp(8,n),         &
+                  ntemp(9,n),ntemp(10,n)
+        !
+        irkg(n)=ntemp(2,n)
+        jrkg(n)=ntemp(3,n)
+        krkg(n)=ntemp(4,n)
+        img(n)=ntemp(5,n)
+        jmg(n)=ntemp(6,n)
+        kmg(n)=ntemp(7,n)
+        i0g(n)=ntemp(8,n)
+        j0g(n)=ntemp(9,n)
+        k0g(n)=ntemp(10,n)
+        !
+        nrank(irkg(n),jrkg(n),krkg(n))=n
+        !
+      end do
+      close(fh)
+      print*,' >> parallel.info ...done.'
+      !
+      ntemp(11,:)=0
+      !
+      nsize=(img(0)+1)*(jmg(0)+1)*(kmg(0)+1)
+      ntemp(11,0)=1
+      !
+      do n=1,mpirankmax
+        !
+        nsize1=(img(n)+1)*(jmg(n)+1)*(kmg(n)+1)
+        if(nsize1<nsize) then
+          nsize=nsize1
+          ntemp(11,n)=1
+          ntemp(11,n-1)=0
+        end if
+        !
+      end do
+      !
+      ! do n=1,mpirankmax
+      !   call MPI_SEND(ntemp(1,n),11,MPI_INTEGER,n,mpitag,              &
+      !                                               mpi_comm_world,ierr)
+      ! end do
+      ! mpitag=mpitag+1
+      ! !
+      ! deallocate( ntemp )
+    endif
+    !
+    allocate( nrect(1:11) )
+    !
+    call mpi_scatter(ntemp(1,0),11,mpi_integer,                        &
+                     nrect(1),  11,mpi_integer,                        &
+                     0,mpi_comm_world,ierr)
+      !
+      !
+    !   call MPI_RECV(nrect(1),11,MPI_INTEGER,0,mpitag,                  &
+    !                                          mpi_comm_world,status,ierr)
+    !   mpitag=mpitag+1
+    !   !
+    ! print*,mpirank,'|',nrect(1)
+    !
+    irk=nrect(2)
+    jrk=nrect(3)
+    krk=nrect(4)
+    im=nrect(5)
+    jm=nrect(6)
+    km=nrect(7)
+    ig0=nrect(8)
+    jg0=nrect(9)
+    kg0=nrect(10)
+    !
+    !
+    if(nrect(11)==1) lio=.true.
+    !
+    if(mpirank==0) deallocate( ntemp )
+    !
+    deallocate( nrect )
+    !
+    !
+    if(lihomo) then
+      !
+      is=0
+      ie=im
+      !
+      if(isize==1) then
+        !
+        mpileft =MPI_PROC_NULL
+        mpiright=MPI_PROC_NULL
+        !
+      else
+        !
+        if(irk==0) then
+          mpileft =krk*(isize*jsize)+jrk*isize+irkm
+          mpiright=krk*(isize*jsize)+jrk*isize+irk+1
+        elseif(irk==irkm) then
+          mpileft =krk*(isize*jsize)+jrk*isize+irk-1
+          mpiright=krk*(isize*jsize)+jrk*isize+0
+        else
+          mpileft =krk*(isize*jsize)+jrk*isize+irk-1
+          mpiright=krk*(isize*jsize)+jrk*isize+irk+1
+        end if
+        !
+      endif
+      !
+      npdci=3
+      !
+    else
+      !
+      if(isize==1) then
+        !
+        mpileft =MPI_PROC_NULL
+        mpiright=MPI_PROC_NULL
+        !
+        npdci=4
+      else
+        !
+        if(irk==0) then
+          is=1
+          ie=im
+          !
+          npdci=1
+          !
+          mpileft =MPI_PROC_NULL
+          mpiright=krk*(isize*jsize)+jrk*isize+irk+1
+        elseif(irk==irkm) then
+          is=0
+          ie=im-1
+          !
+          npdci=2
+          mpileft =krk*(isize*jsize)+jrk*isize+irk-1
+          mpiright=MPI_PROC_NULL
+        else
+          is=0
+          ie=im
+          !
+          npdci=3
+          !
+          mpileft =krk*(isize*jsize)+jrk*isize+irk-1
+          mpiright=krk*(isize*jsize)+jrk*isize+irk+1
+        end if
+        !
+      endif
+        !
+    end if
+    !
+    if(ljhomo) then
+      !
+      js=0
+      je=jm
+      !
+      npdcj=3
+      !
+      if(jsize==1) then
+        mpidown=MPI_PROC_NULL
+        mpiup  =MPI_PROC_NULL
+      else
+        if(jrk==0) then
+          mpidown=krk*(isize*jsize)+   jrkm*isize+irk
+          mpiup  =krk*(isize*jsize)+(jrk+1)*isize+irk
+        elseif(jrk==jrkm) then
+          mpidown=krk*(isize*jsize)+(jrk-1)*isize+irk
+          mpiup  =krk*(isize*jsize)+      0*isize+irk
+        else
+          mpidown=krk*(isize*jsize)+(jrk-1)*isize+irk
+          mpiup  =krk*(isize*jsize)+(jrk+1)*isize+irk
+        end if
+      endif
+      !
+    else
+      !
+      if(jsize==1) then
+        mpidown=MPI_PROC_NULL
+        mpiup  =MPI_PROC_NULL
+        !
+        npdcj=4
+      else
+        if(jrk==0) then
+          js=1
+          je=jm
+          !
+          npdcj=1
+          !
+          mpidown=MPI_PROC_NULL
+          mpiup  =krk*(isize*jsize)+(jrk+1)*isize+irk
+        elseif(jrk==jrkm) then
+          js=0
+          je=jm-1
+          !
+          npdcj=2
+          !
+          mpidown=krk*(isize*jsize)+(jrk-1)*isize+irk
+          mpiup  =MPI_PROC_NULL
+        else
+          js=0
+          je=jm
+          !
+          npdcj=3
+          !
+          mpidown=krk*(isize*jsize)+(jrk-1)*isize+irk
+          mpiup  =krk*(isize*jsize)+(jrk+1)*isize+irk
+        end if
+      endif
+      !
+    end if
+    !
+    if(lkhomo) then
+      !
+      ks=0
+      ke=km
+      !
+      npdck=3
+      !
+      if(ksize==1) then
+        mpiback=MPI_PROC_NULL
+        mpifront=MPI_PROC_NULL
+      else
+        if(krk==0) then
+          mpiback=    krkm*(isize*jsize)+jrk*isize+irk
+          mpifront=(krk+1)*(isize*jsize)+jrk*isize+irk
+        elseif(krk==krkm) then
+          mpiback=(krk-1)*(isize*jsize)+jrk*isize+irk
+          mpifront=     0*(isize*jsize)+jrk*isize+irk
+        else
+          mpiback= (krk-1)*(isize*jsize)+jrk*isize+irk
+          mpifront=(krk+1)*(isize*jsize)+jrk*isize+irk
+        end if
+      end if
+      !
+    else
+      !
+      if(ksize==1) then
+        mpiback=MPI_PROC_NULL
+        mpifront=MPI_PROC_NULL
+        !
+        npdck=4
+      else
+        !
+        if(krk==0) then
+          ks=1
+          ke=km
+          !
+          npdck=1
+          !
+          mpiback=MPI_PROC_NULL
+          mpifront=(krk+1)*(isize*jsize)+jrk*isize+irk
+        elseif(krk==krkm) then
+          ks=0
+          ke=km-1
+          !
+          npdck=2
+          !
+          mpiback=(krk-1)*(isize*jsize)+jrk*isize+irk
+          mpifront=MPI_PROC_NULL
+        else
+          ks=0
+          ke=km
+          !
+          npdck=3
+          !
+          mpiback=(krk-1)*(isize*jsize)+jrk*isize+irk
+          mpifront=(krk+1)*(isize*jsize)+jrk*isize+irk
+        end if
+        !
+      end if
+      !
+    end if 
+    !
+    if(lio) write(*,'(A,I0,A)')'  ** rank ',mpirank,' is the I/O rank'
+    !
+    call bcast(nrank)
+    !
+    call bcast(irkg)
+    call bcast(jrkg)
+    call bcast(krkg)
+    call bcast(img)
+    call bcast(jmg)
+    call bcast(kmg)
+    call bcast(i0g)
+    call bcast(j0g)
+    call bcast(k0g)
+    !
+    call subcomm(nrank,irkg,jrkg,krkg,img,jmg,kmg,i0g,j0g,k0g)
+    !
+    deallocate(nrank,irkg,jrkg,krkg,img,jmg,kmg,i0g,j0g,k0g)
+    !
+  end subroutine parallelini
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! The end of the subroutine parallelini
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !!
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to barrier all ranks                      |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 19-July-2019: Created by J. Fang @ STFC Daresbury Laboratory      |
+  !+-------------------------------------------------------------------+
+  subroutine mpibar
+    !
+    integer :: ierr
+    !
+    call mpi_barrier(mpi_comm_world,ierr)
+    !
+  end subroutine mpibar
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine mpibar.                                 |
+  !+-------------------------------------------------------------------+
+  !!
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to finalise mpi and stop the program.     |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 19-July-2019: Created by J. Fang @ STFC Daresbury Laboratory      |
+  !+-------------------------------------------------------------------+
+  subroutine mpistop
+    !
+    integer :: ierr
+    !
+    call mpi_barrier(mpi_comm_world,ierr)
+    !
+    call mpi_finalize(ierr)
+    !
+    if(lio) print*,' ** The job is done!'
+    !
+    stop
+    !
+  end subroutine mpistop
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine mpistop.                                |
+  !+-------------------------------------------------------------------+
+  !!
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to broadcase variables and arraies to all |
+  !|  ranks.                                                           |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 19-July-2019: Created by J. Fang @ STFC Daresbury Laboratory      |
+  !+-------------------------------------------------------------------+
+  subroutine bcast_cha(vario)
+    !
+    ! arguments
+    character(len=*),intent(inout) :: vario
+    !
+    ! local data
+    integer :: len,ierr
+    !
+    len=len_trim(vario)
+    call MPI_BCAST(len,1,mpi_integer,0,mpi_comm_world,ierr)
+    !
+    call MPI_BCAST(vario,len,mpi_character,0,mpi_comm_world,ierr)
+    !
+    vario=vario(1:len)
+    !
+  end subroutine bcast_cha
+  !
+  subroutine bcast_chafix_ary(vario)
+    !
+    ! arguments
+    character(len=*),intent(inout) :: vario(:)
+    !
+    ! local data
+    integer :: nsize,ierr
+    !
+    nsize=size(vario)
+    !
+    call MPI_BCAST(vario,nsize,mpi_character,0,mpi_comm_world,ierr)
+    !
+  end subroutine bcast_chafix_ary
+  !
+  subroutine bcast_int(vario,comm)
+    !
+    ! arguments
+    integer,intent(inout) :: vario
+    integer,intent(in),optional :: comm
+    !
+    ! local data
+    integer :: ierr
+    !
+    if(present(comm)) then
+      call mpi_bcast(vario,1,mpi_integer,0,comm,ierr)
+    else
+      call mpi_bcast(vario,1,mpi_integer,0,mpi_comm_world,ierr)
+    endif
+    !
+    !
+  end subroutine bcast_int
+  !
+  subroutine bcast_int_ary(vario)
+    !
+    ! arguments
+    integer,intent(inout) :: vario(:)
+    !
+    ! local data
+    integer :: nsize,ierr
+    !
+    nsize=size(vario)
+    !
+    call MPI_BCAST(vario,nsize,mpi_integer,0,mpi_comm_world,ierr)
+    !
+  end subroutine bcast_int_ary
+  !
+  subroutine bcast_int_ary2(vario)
+    !
+    ! arguments
+    integer,intent(inout) :: vario(:,:)
+    !
+    ! local data
+    integer :: nsize,ierr
+    !
+    nsize=size(vario,1)*size(vario,2)
+    !
+    call MPI_BCAST(vario,nsize,mpi_integer,0,mpi_comm_world,ierr)
+    !
+  end subroutine bcast_int_ary2
+  !
+  subroutine bcast_int_ary3(vario)
+    !
+    ! arguments
+    integer,intent(inout) :: vario(:,:,:)
+    !
+    ! local data
+    integer :: nsize,ierr
+    !
+    nsize=size(vario,1)*size(vario,2)*size(vario,3)
+    !
+    call MPI_BCAST(vario,nsize,mpi_integer,0,mpi_comm_world,ierr)
+    !
+  end subroutine bcast_int_ary3
+  !
+  subroutine bcast_r8(vario,comm)
+    !
+    ! arguments
+    real(8),intent(inout) :: vario
+    integer,intent(in),optional :: comm
+    !
+    ! local data
+    integer :: ierr
+    !
+    if(present(comm)) then
+      call mpi_bcast(vario,1,mpi_real8,0,comm,ierr)
+    else
+      call mpi_bcast(vario,1,mpi_real8,0,mpi_comm_world,ierr)
+    endif
+    !
+    !
+  end subroutine bcast_r8
+  !
+  subroutine bcast_r8_ary(vario)
+    !
+    ! arguments
+    real(8),intent(inout) :: vario(:)
+    !
+    ! local data
+    integer :: nsize,ierr
+    !
+    nsize=size(vario)
+    !
+    call MPI_BCAST(vario,nsize,mpi_real8,0,mpi_comm_world,ierr)
+    !
+  end subroutine bcast_r8_ary
+  !
+  subroutine bcast_r8_ary_allo(vario,nsize)
+    !
+    ! arguments
+    real(8),intent(inout),allocatable :: vario(:)
+    integer,intent(in) :: nsize
+    !
+    ! local data
+    integer :: ierr
+    !
+    if(.not.allocated(vario)) allocate(vario(nsize))
+    !
+    call MPI_BCAST(vario,nsize,mpi_real8,0,mpi_comm_world,ierr)
+    !
+  end subroutine bcast_r8_ary_allo
+  !
+  subroutine bcast_r8_ary2(vario,rank)
+    !
+    ! arguments
+    real(8),intent(inout) :: vario(:,:)
+    integer,intent(in),optional :: rank
+    !
+    ! local data
+    integer :: nsize,ierr,root
+    !
+    nsize=size(vario,1)*size(vario,2)
+    !
+    if(present(rank)) then
+      root=rank
+    else
+      root=0
+    endif
+    !
+    call MPI_BCAST(vario,nsize,mpi_real8,root,mpi_comm_world,ierr)
+    !
+  end subroutine bcast_r8_ary2
+  !
+  subroutine bcast_r8_ary3(vario)
+    !
+    ! arguments
+    real(8),intent(inout) :: vario(:,:,:)
+    !
+    ! local data
+    integer :: nsize,ierr
+    !
+    nsize=size(vario,1)*size(vario,2)*size(vario,3)
+    !
+    call MPI_BCAST(vario,nsize,mpi_real8,0,mpi_comm_world,ierr)
+    !
+  end subroutine bcast_r8_ary3
+  !
+  subroutine bcast_log(vario)
+    !
+    ! arguments
+    logical,intent(inout) :: vario
+    !
+    ! local data
+    integer :: ierr
+    !
+    call MPI_BCAST(vario,1,mpi_logical,0,mpi_comm_world,ierr)
+    !
+  end subroutine bcast_log
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine bcast.                                  |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to broadcase solid array.                 |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 02-Jul-2021: Created by J. Fang @ Appleton                        |
+  !+-------------------------------------------------------------------+
+  subroutine bcast_solid_ary(vario)
+    !
+    use commtype,  only : solid,triangle
+    !
+    ! arguments
+    type(solid),allocatable,intent(inout) :: vario(:)
+    !
+    ! local data
+    integer :: nsize,ierr,js,jf
+    !
+    nsize=size(vario)
+    !
+    call bcast_int(nsize)
+    !
+    if(mpirank.ne.0) then
+      if(allocated(vario)) deallocate(vario)
+      allocate(vario(1:nsize))
+    endif
+    !
+    do js=1,nsize
+      !
+      call bcast_cha(vario(js)%name)
+      call bcast_r8_ary(vario(js)%xmin)
+      call bcast_r8_ary(vario(js)%xmax)
+      call bcast_r8_ary(vario(js)%xref)
+      call bcast_r8_ary(vario(js)%xcen)
+      call bcast_int(vario(js)%num_face)
+      call bcast_int(vario(js)%num_edge)
+      !
+      if(mpirank.ne.0) then
+        call vario(js)%alloface()
+        call vario(js)%alloedge()
+      endif
+      !
+      do jf=1,vario(js)%num_face
+        call bcast_r8_ary(vario(js)%face(jf)%a)
+        call bcast_r8_ary(vario(js)%face(jf)%b)
+        call bcast_r8_ary(vario(js)%face(jf)%c)
+        call bcast_r8_ary(vario(js)%face(jf)%normdir)
+        call bcast_r8(vario(js)%face(jf)%area)
+      enddo
+      !
+      do jf=1,vario(js)%num_edge
+        call bcast_r8_ary(vario(js)%edge(jf)%a)
+        call bcast_r8_ary(vario(js)%edge(jf)%b)
+        call bcast_r8_ary(vario(js)%edge(jf)%normdir)
+        call bcast_r8_ary(vario(js)%edge(jf)%cen)
+        call bcast_r8(vario(js)%edge(jf)%length)
+      enddo
+      !
+    enddo
+    !
+    !
+  end subroutine bcast_solid_ary
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine bcast_solid_ary.                        |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to update and synchronise the table.      |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 30-September-2019: Created by J. Fang @ STFC Daresbury Laboratory |
+  !+-------------------------------------------------------------------+
+  subroutine updatable_int(var,table,offset,debug)
+    !
+    ! arguments
+    integer,intent(in) :: var
+    integer,optional,intent(out) :: table(0:mpirankmax)
+    integer,optional,intent(out) :: offset
+    logical,intent(in),optional :: debug
+    !
+    ! local data
+    integer :: ierr,i
+    integer :: vta(0:mpirankmax)
+    logical :: ldebug
+    !
+    if(present(debug)) then
+      ldebug=debug
+    else
+      ldebug=.false.
+    endif
+    !
+    call mpi_allgather(var,1,mpi_integer,                              &
+                       vta,1,mpi_integer,mpi_comm_world,ierr)
+    !
+    if(present(table)) then
+      table=vta
+    endif
+    !
+    if(present(offset)) then
+      !
+      if(mpirank==0) then
+        offset=0
+      else
+        !
+        offset=0
+        do i=0,mpirank-1
+          offset=offset+vta(i)
+        enddo
+        !
+      endif
+      !
+    endif
+    !
+  end subroutine updatable_int
+  !
+  subroutine updatable_int_a2a_v(datasend,datarecv,                    &
+                                 sendtabl,recvtabl,                 &
+                                 timerept)
+    !
+    ! arguments
+    integer,intent(in) :: datasend(:)
+    integer,allocatable,intent(out) :: datarecv(:)
+    integer,intent(in) :: sendtabl(0:),recvtabl(0:)
+    !
+    logical,intent(in),optional :: timerept
+    !
+    ! local data
+    integer :: nvar,ierr,incode,jrank,recvsize
+    integer,allocatable :: senddispls(:),recvdispls(:)
+    !
+    real(8) :: time_beg
+    real(8),save :: subtime=0.d0
+    !
+    ! start
+    !
+    if(present(timerept) .and. timerept) time_beg=ptime() 
+    !
+    nvar=1
+    !
+    allocate(senddispls(0:mpirankmax),recvdispls(0:mpirankmax))
+    !
+    senddispls=0
+    recvdispls=0
+    do jrank=1,mpirankmax
+      senddispls(jrank)=senddispls(jrank-1)+sendtabl(jrank-1)
+      recvdispls(jrank)=recvdispls(jrank-1)+recvtabl(jrank-1)
+    enddo
+    recvsize=recvdispls(mpirankmax)+recvtabl(mpirankmax)
+    allocate(datarecv(recvsize))
+    !
+    call mpi_alltoallv(datasend, sendtabl, senddispls, mpi_integer, &
+                       datarecv, recvtabl, recvdispls, mpi_integer, &
+                       mpi_comm_world, ierr)
+    !
+    deallocate(senddispls,recvdispls)
+    !
+    if(present(timerept) .and. timerept) then
+      !
+      subtime=subtime+ptime()-time_beg
+      !
+      !
+    endif
+    !
+    return
+    !
+  end subroutine updatable_int_a2a_v
+  !
+  subroutine updatable_rel_a2a_v(datasend,datarecv,                    &
+                                 sendtabl,recvtabl,                 &
+                                 timerept)
+    !
+    ! arguments
+    real(8),intent(in) :: datasend(:)
+    real(8),allocatable,intent(out) :: datarecv(:)
+    integer,intent(in) :: sendtabl(0:),recvtabl(0:)
+    !
+    logical,intent(in),optional :: timerept
+    !
+    ! local data
+    integer :: nvar,ierr,incode,jrank,recvsize
+    integer,allocatable :: senddispls(:),recvdispls(:)
+    !
+    real(8) :: time_beg
+    real(8),save :: subtime=0.d0
+    !
+    ! start
+    !
+    if(present(timerept) .and. timerept) time_beg=ptime() 
+    !
+    nvar=1
+    !
+    allocate(senddispls(0:mpirankmax),recvdispls(0:mpirankmax))
+    !
+    senddispls=0
+    recvdispls=0
+    do jrank=1,mpirankmax
+      senddispls(jrank)=senddispls(jrank-1)+sendtabl(jrank-1)
+      recvdispls(jrank)=recvdispls(jrank-1)+recvtabl(jrank-1)
+    enddo
+    recvsize=recvdispls(mpirankmax)+recvtabl(mpirankmax)
+    allocate(datarecv(recvsize))
+    !
+    call mpi_alltoallv(datasend, sendtabl, senddispls, mpi_real8, &
+                       datarecv, recvtabl, recvdispls, mpi_real8, &
+                       mpi_comm_world, ierr)
+    !
+    deallocate(senddispls,recvdispls)
+    !
+    if(present(timerept) .and. timerept) then
+      !
+      subtime=subtime+ptime()-time_beg
+      !
+      !
+    endif
+    !
+    return
+    !
+  end subroutine updatable_rel_a2a_v
+  !
+  subroutine updatable_rel2d_a2a_v(datasend,datarecv,                 &
+                                   sendtabl,recvtabl,                 &
+                                   comm,timerept)
+    !
+    ! arguments
+    real(8),intent(in) :: datasend(:,:)
+    real(8),allocatable,intent(out) :: datarecv(:,:)
+    integer,intent(in) :: sendtabl(0:),recvtabl(0:)
+    !
+    integer,optional,intent(in) :: comm
+    logical,intent(in),optional :: timerept
+    !
+    ! local data
+    integer :: nvar,ierr,incode,jrank,recvsize,n2size,j,rankmax,comms
+    integer :: newtype
+    integer,allocatable :: senddispls(:),recvdispls(:)
+    !
+    real(8) :: time_beg
+    real(8),save :: subtime=0.d0
+    !
+    ! start
+    !
+    if(present(timerept) .and. timerept) time_beg=ptime() 
+    !
+    nvar=1
+    !
+    n2size=size(datasend,1)
+    !
+    call mpi_type_contiguous(n2size,mpi_real8,newtype,ierr)
+    call mpi_type_commit(newtype,ierr)
+    !
+    if(present(comm)) then
+      comms=comm
+      call mpi_comm_size(comms,rankmax,ierr)
+      rankmax=rankmax-1
+    else
+      comms=mpi_comm_world
+      rankmax=mpirankmax
+    endif
+    !
+    allocate(senddispls(0:rankmax),recvdispls(0:rankmax))
+    senddispls=0
+    recvdispls=0
+    do jrank=1,rankmax
+      senddispls(jrank)=senddispls(jrank-1)+sendtabl(jrank-1)
+      recvdispls(jrank)=recvdispls(jrank-1)+recvtabl(jrank-1)
+    enddo
+    recvsize=recvdispls(rankmax)+recvtabl(rankmax)
+    allocate(datarecv(n2size,recvsize))
+    !
+    call mpi_alltoallv(datasend, sendtabl, senddispls, newtype, &
+                       datarecv, recvtabl, recvdispls, newtype, &
+                       comms, ierr)
+    !
+    ! do j=1,size(datarecv,1)
+    ! if(mpirank==11) print*,datasend
+    ! enddo
+    !
+    deallocate(senddispls,recvdispls)
+    !
+    if(present(timerept) .and. timerept) then
+      !
+      subtime=subtime+ptime()-time_beg
+      !
+      !
+    endif
+    !
+    return
+    !
+  end subroutine updatable_rel2d_a2a_v
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine updatable_int.                          |
+  !+-------------------------------------------------------------------+
+  !!
+  !+-------------------------------------------------------------------+
+  !| this function is to update table based on alltoall mpi            |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 17-Jun-2022  | Created by J. Fang STFC Daresbury Laboratory       |
+  !+-------------------------------------------------------------------+
+  function pswapall_int1d_array(vain) result(vout)
+    !
+    use mpi
+    !
+    integer,intent(in) :: vain(:)
+    integer :: vout(size(vain))
+    !
+    ! local variables
+    integer :: nvar,ierr
+    !
+    nvar=size(vain)
+    !
+    call mpi_alltoall(vain,1,mpi_integer,                   &
+                      vout,1,mpi_integer,mpi_comm_world,ierr)
+    !
+    return
+    !
+  end function pswapall_int1d_array
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine pswapall_int1d_array.                   |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to gather arraies.                        |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 16-Jul-2021: Created by J. Fang @ STFC Daresbury Laboratory       |
+  !+-------------------------------------------------------------------+
+  subroutine pgather_rel2d_array_rank(array,data,rank)
+    !
+    ! arguments
+    real(8),intent(in) :: array(:,:)
+    integer,intent(in) :: rank
+    real(8),intent(out),allocatable :: data(:,:)
+    !
+    !
+    ! local data
+    integer :: displs(0:mpirankmax),counts(0:mpirankmax)
+    integer :: ierr,jrank,nrecv(1),nsize,dim1,dim2
+    !
+    ! get the size of data to gather
+    dim1=size(array,1)
+    dim2=size(array,2)
+    !
+    dim1=pmax(dim1)
+    !
+    nrecv(1)=size(array)
+    !
+    call mpi_gather(nrecv, 1, mpi_integer, counts, 1, mpi_integer,  &
+                    rank,mpi_comm_world, ierr)
+    ! 
+    if(mpirank==rank) then
+      !
+      displs(0)=0
+      do jrank=1,mpirankmax
+        displs(jrank)=displs(jrank-1)+counts(jrank-1)
+      enddo
+      !
+      nsize=displs(mpirankmax)+counts(mpirankmax)
+      !
+      allocate(data(dim1,nsize/dim1))
+      !
+    endif
+    !
+    call mpi_gatherv(array, nrecv(1), mpi_real8,              &
+                      data, counts, displs, mpi_real8, rank,  &
+                      mpi_comm_world, ierr)
+    return
+    !
+  end subroutine pgather_rel2d_array_rank
+  !
+  subroutine pgather_int1d_array(array,data)
+    !
+    ! arguments
+    integer,intent(in) :: array(:)
+    integer,intent(out),allocatable :: data(:)
+    !
+    !
+    ! local data
+    integer :: displs(0:mpirankmax),counts(0:mpirankmax)
+    integer :: ierr,jrank,nrecv(1),nsize
+    !
+    ! get the size of data to gather
+    nrecv(1)=size(array)
+    !
+    call mpi_allgather(nrecv, 1, mpi_integer, counts, 1, mpi_integer,  &
+                       mpi_comm_world, ierr)
+    !
+    displs(0)=0
+    do jrank=1,mpirankmax
+      displs(jrank)=displs(jrank-1)+counts(jrank-1)
+    enddo
+    !
+    nsize=displs(mpirankmax)+counts(mpirankmax)
+    allocate(data(1:nsize))
+    !
+    call mpi_allgatherv(array, nrecv(1), mpi_integer,       &
+                        data,  counts, displs, mpi_integer, &
+                        mpi_comm_world, ierr)
+    !
+  end subroutine pgather_int1d_array
+  !
+  subroutine pgather_int_comm(var,data,comm)
+    !
+    ! arguments
+    integer,intent(in) :: var,comm
+    integer,intent(inout) :: data(:)
+    !
+    ! local data
+    integer :: ierr,jrank,ncou
+    !
+    call mpi_allgather(var, 1, mpi_integer, data, 1, mpi_integer,  &
+                       comm, ierr)
+    !
+  end subroutine pgather_int_comm
+  !
+  subroutine pgather_int(var,data,mode)
+    !
+    ! arguments
+    integer,intent(in) :: var
+    integer,intent(out),allocatable :: data(:)
+    character(len=*),intent(in),optional :: mode
+    !
+    !
+    ! local data
+    integer :: counts(0:mpirankmax)
+    integer :: ierr,jrank,ncou
+    !
+    call mpi_allgather(var, 1, mpi_integer, counts, 1, mpi_integer,  &
+                       mpi_comm_world, ierr)
+    !
+    if(present(mode) .and. mode=='noneg') then
+      ! only pick >=0 values
+      ncou=0
+      do jrank=0,mpirankmax
+        if(counts(jrank)>=0) then
+          ncou=ncou+1
+        endif
+      enddo
+      !
+      allocate(data(ncou))
+      ncou=0
+      do jrank=0,mpirankmax
+        if(counts(jrank)>=0) then
+          ncou=ncou+1
+          data(ncou)=counts(jrank)
+        endif
+      enddo
+      !
+    else
+      allocate(data(0:mpirankmax))
+      data=counts
+    endif
+    !
+  end subroutine pgather_int
+  !
+  subroutine pgather_rel2d_array(array,data)
+    !
+    ! arguments
+    real(8),intent(in) :: array(:,:)
+    real(8),intent(out),allocatable :: data(:,:)
+    !
+    !
+    ! local data
+    integer :: displs(0:mpirankmax),counts(0:mpirankmax)
+    integer :: ierr,jrank,nrecv(1),nsize,dim1,dim2
+    !
+    ! get the size of data to scatter
+    dim1=size(array,1)
+    dim2=size(array,2)
+    !
+    nrecv(1)=size(array)
+    !
+    dim1=pmax(dim1)
+    !
+    call mpi_allgather(nrecv, 1, mpi_integer, counts, 1, mpi_integer,  &
+                    mpi_comm_world, ierr)
+    !
+    displs(0)=0
+    do jrank=1,mpirankmax
+      displs(jrank)=displs(jrank-1)+counts(jrank-1)
+    enddo
+    !
+    nsize=displs(mpirankmax)+counts(mpirankmax)
+    !
+    allocate(data(dim1,nsize/dim1))
+    !
+    call mpi_allgatherv(array, nrecv(1), mpi_real8,       &
+                        data,  counts, displs, mpi_real8, &
+                        mpi_comm_world, ierr)
+    !
+  end subroutine pgather_rel2d_array
+  !
+  subroutine pgather_rel1d_array(array,data)
+    !
+    ! arguments
+    real(8),allocatable,intent(in) :: array(:)
+    real(8),intent(out),allocatable :: data(:)
+    !
+    !
+    ! local data
+    integer :: displs(0:mpirankmax),counts(0:mpirankmax)
+    integer :: ierr,jrank,nrecv(1),nsize,dim1
+    !
+    ! get the size of data to scatter
+    if(.not.allocated(array)) then
+      dim1=0
+    else
+      dim1=size(array)
+    endif
+    ! print*,allocated(array),dim1
+    !
+    nrecv(1)=dim1
+    !
+    dim1=pmax(dim1)
+    !
+    call mpi_allgather(nrecv, 1, mpi_integer, counts, 1, mpi_integer,  &
+                    mpi_comm_world, ierr)
+    !
+    displs(0)=0
+    do jrank=1,mpirankmax
+      displs(jrank)=displs(jrank-1)+counts(jrank-1)
+    enddo
+    !
+    nsize=displs(mpirankmax)+counts(mpirankmax)
+    !
+    allocate(data(nsize))
+    !
+    call mpi_allgatherv(array, nrecv(1), mpi_real8,       &
+                        data,  counts, displs, mpi_real8, &
+                        mpi_comm_world, ierr)
+    !
+  end subroutine pgather_rel1d_array
+  !
+  subroutine pgather_int2d_array(array,data)
+    !
+    ! arguments
+    integer,intent(in) :: array(:,:)
+    integer,intent(out),allocatable :: data(:,:)
+    !
+    !
+    ! local data
+    integer :: displs(0:mpirankmax),counts(0:mpirankmax)
+    integer :: ierr,jrank,nrecv(1),nsize,dim1,dim2
+    !
+    ! get the size of data to scatter
+    dim1=size(array,1)
+    dim2=size(array,2)
+    !
+    nrecv(1)=size(array)
+    !
+    dim1=pmax(dim1)
+    !
+    call mpi_allgather(nrecv, 1, mpi_integer, counts, 1, mpi_integer,  &
+                    mpi_comm_world, ierr)
+    !
+    displs(0)=0
+    do jrank=1,mpirankmax
+      displs(jrank)=displs(jrank-1)+counts(jrank-1)
+    enddo
+    !
+    nsize=displs(mpirankmax)+counts(mpirankmax)
+    !
+    allocate(data(dim1,nsize/dim1))
+    !
+    call mpi_allgatherv(array, nrecv(1), mpi_integer,       &
+                        data,  counts, displs, mpi_integer, &
+                        mpi_comm_world, ierr)
+    !
+  end subroutine pgather_int2d_array
+  !
+  subroutine pgather_cha1_array(array,data)
+    !
+    ! arguments
+    character(len=1),intent(in) :: array(:)
+    character(len=1),intent(out),allocatable :: data(:)
+    !
+    !
+    ! local data
+    integer :: displs(0:mpirankmax),counts(0:mpirankmax)
+    integer :: ierr,jrank,nrecv(1),nsize,dim1
+    !
+    ! get the size of data to scatter
+    dim1=size(array)
+    !
+    nrecv(1)=dim1
+    !
+    call mpi_allgather(nrecv, 1, mpi_integer, counts, 1, mpi_integer,  &
+                    mpi_comm_world, ierr)
+    !
+    displs(0)=0
+    do jrank=1,mpirankmax
+      displs(jrank)=displs(jrank-1)+counts(jrank-1)
+    enddo
+    !
+    nsize=displs(mpirankmax)+counts(mpirankmax)
+    !
+    allocate(data(nsize))
+    !
+    call mpi_allgatherv(array, nrecv(1), mpi_character,       &
+                        data,  counts, displs, mpi_character, &
+                        mpi_comm_world, ierr)
+    !
+  end subroutine pgather_cha1_array
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine pgather.                                |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to scatter data according to the table.   |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 15-Jul-2021: Created by J. Fang @ STFC Daresbury Laboratory       |
+  !+-------------------------------------------------------------------+
+  subroutine pscatter_rel2d(array,data,table,offset,rank)
+    !
+    ! arguments
+    real(8),intent(in) :: array(:,:)
+    integer,intent(in) :: table(0:),rank
+    integer,intent(in),optional :: offset(0:)
+    real(8),intent(out),allocatable :: data(:,:)
+    !
+    ! local data
+    integer :: displs(0:mpirankmax),counts(0:mpirankmax)
+    integer :: ierr,jrank,dim1
+    !
+    dim1=size(array,1)
+    !
+    counts=dim1*table
+    !
+    if(present(offset)) then
+      displs=offset
+    else
+      displs(0)=0
+      do jrank=1,mpirankmax
+        displs(jrank)=displs(jrank-1)+counts(jrank-1)
+      enddo
+    endif
+    !
+    allocate(data(dim1,table(mpirank)))
+    !
+    call mpi_scatterv(array, counts, displs,  mpi_real8,       &
+                      data,  counts(mpirank), mpi_real8, rank, &
+                      mpi_comm_world,ierr)
+    !
+    return
+    !
+  end subroutine pscatter_rel2d
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine pscatter.                               |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to merge arraies from differnet ranks and |
+  !| broadcast it.                                                     |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 15-Jul-2021: Created by J. Fang @ STFC Daresbury Laboratory       |
+  !+-------------------------------------------------------------------+
+  subroutine pmerg_sbou(var,nvar,vmerg)
+    !
+    use commtype,  only : sboun
+    !
+    ! arguments
+    type(sboun),allocatable,intent(in) :: var(:)
+    type(sboun),allocatable,intent(out) :: vmerg(:)
+    integer,intent(in),optional :: nvar
+    !
+    ! local data
+    integer :: nsize,ntotle,jb
+    real(8),allocatable :: sb_rea(:,:),sbt_rea(:,:)
+    integer,allocatable :: sb_int(:,:),sbt_int(:,:)
+    character(len=1),allocatable :: sb_cha(:),sbt_cha(:)
+    !
+    integer :: ns_tab(0:mpirankmax)
+    !
+    if(present(nvar)) then
+      nsize=nvar
+    else
+      nsize=size(var)
+    endif
+    !
+    call ptabupd(var=nsize,table=ns_tab)
+    !
+    allocate(sb_rea(3,nsize),sb_int(3,nsize),sb_cha(nsize))
+    !
+    ! merge x 
+    do jb=1,nsize
+      sb_rea(:,jb)=var(jb)%x(:)
+    enddo
+    !
+    call pgather(sb_rea,sbt_rea)
+    !
+    ntotle=psum(nsize)
+    !
+    allocate(vmerg(1:ntotle))
+    !
+    do jb=1,ntotle
+      vmerg(jb)%x(:)=sbt_rea(:,jb)
+    enddo
+    !
+    ! end of merge x 
+    !
+    ! merge normdir 
+    do jb=1,nsize
+      sb_rea(:,jb)=var(jb)%normdir(:)
+    enddo
+    !
+    call pgather(sb_rea,sbt_rea)
+    !
+    do jb=1,ntotle
+      vmerg(jb)%normdir(:)=sbt_rea(:,jb)
+    enddo
+    !
+    ! end of merge normdir
+    !
+    ! merge ximag 
+    do jb=1,nsize
+      sb_rea(:,jb)=var(jb)%ximag(:)
+    enddo
+    !
+    call pgather(sb_rea,sbt_rea)
+    !
+    do jb=1,ntotle
+      vmerg(jb)%ximag(:)=sbt_rea(:,jb)
+    enddo
+    !
+    ! end of merge ximag
+    !
+    ! merge dis2ghost and dist2image 
+    do jb=1,nsize
+      sb_rea(1,jb)=var(jb)%dis2image
+      sb_rea(2,jb)=var(jb)%dis2ghost
+      sb_rea(3,jb)=0.d0
+    enddo
+    !
+    call pgather(sb_rea,sbt_rea)
+    !
+    do jb=1,ntotle
+      vmerg(jb)%dis2image=sbt_rea(1,jb)
+      vmerg(jb)%dis2ghost=sbt_rea(2,jb)
+    enddo
+    !
+    ! end of merge ximag
+    !
+    ! merge igh 
+    do jb=1,nsize
+      sb_int(:,jb)=var(jb)%igh(:)
+    enddo
+    !
+    call pgather(sb_int,sbt_int)
+    !
+    do jb=1,ntotle
+      vmerg(jb)%igh(:)=sbt_int(:,jb)
+    enddo
+    ! end of merge igh
+    !
+    ! merge nodetype 
+    do jb=1,nsize
+      sb_cha(jb)=var(jb)%nodetype
+    enddo
+    !
+    call pgather(sb_cha,sbt_cha)
+    !
+    do jb=1,ntotle
+      vmerg(jb)%nodetype=sbt_cha(jb)
+    enddo
+    ! end of merge igh
+    !
+    ! print*,mpirank,'|',nsize
+    ! !
+    ! if(mpirank==4) then
+    !   print*,mpirank,'|',sb_int(:,1)
+    ! endif
+    ! !
+    ! if(mpirank==0) then
+    !   print*,mpirank,'|',sbt_int(:,717)
+    ! endif
+    !
+    return
+    !
+  end subroutine pmerg_sbou
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine pmerg_sbou.                             |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This function is superpose variables from different ranks.        |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 28-07-2022: Created by J. Fang @ STFC Daresbury Laboratory        |
+  !+-------------------------------------------------------------------+
+  subroutine psuperpose_int_ary1d(var,vout)
+    !
+    use commtype, only : varray
+    !
+    integer,intent(in) :: var(:)
+    type(varray),intent(out) :: vout(1:size(var))
+    !
+    ! local data
+    integer :: nsize,i,j,jrank,ierr,ncout
+    integer,allocatable :: buf(:)
+    !
+    nsize=size(var)
+    !
+    allocate(buf(nsize*mpisize))
+    !
+    call mpi_gather(var,nsize,mpi_integer,buf,nsize,mpi_integer,  &
+                                             0,mpi_comm_world,ierr)
+    ! !
+    if(mpirank==0) then
+      !
+      do i=1,nsize
+        !
+        ncout=0
+        do jrank=0,mpirankmax
+          !
+          j=i+jrank*nsize
+          !
+          if(buf(j)>=0) then
+            !
+            ncout=ncout+1
+            !
+          endif
+          !
+        enddo
+        !
+        if(ncout>0) allocate(vout(i)%vint(ncout))
+        !
+        ncout=0
+        do jrank=0,mpirankmax
+          !
+          j=i+jrank*nsize
+          !
+          if(buf(j)>=0) then
+            !
+            ncout=ncout+1
+            !
+            vout(i)%vint(ncout)=buf(j)
+            !
+          endif
+          !
+        enddo
+        !
+      enddo
+      !
+    endif
+    ! !
+    ! call bcast(vout)
+    ! call bcast(nout)
+    ! !
+    return
+    !
+  end subroutine psuperpose_int_ary1d
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine psuperpose.                             |
+  !+-------------------------------------------------------------------+
+  !
+  !
+  !+-------------------------------------------------------------------+
+  !| This function is used to sum a number across ranks                |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 01-October-2019: Created by J. Fang @ STFC Daresbury Laboratory   |
+  !+-------------------------------------------------------------------+
+  integer function  psum_int(var,comm)
+    !
+    ! arguments
+    integer,intent(in) :: var
+    integer,intent(in),optional :: comm
+    !
+    ! local data
+    integer :: ierr,comms
+    !
+    if(present(comm)) then
+      comms=comm
+    else
+      comms=mpi_comm_world
+    endif
+    !
+    call mpi_allreduce(var,psum_int,1,mpi_integer,mpi_sum,comms,ierr)
+    !
+  end function psum_int
+  !
+  function psum_int_ary(var) result(varsum)
+    !
+    ! arguments
+    integer,intent(in) :: var(:)
+    integer,allocatable :: varsum(:)
+    !
+    ! local data
+    integer :: ierr,nsize
+    !
+    nsize=size(var)
+    !
+    allocate(varsum(nsize))
+    !
+    call mpi_allreduce(var,varsum,nsize,mpi_integer,mpi_sum,           &
+                                                    mpi_comm_world,ierr)
+    !
+    return
+    !
+  end function psum_int_ary
+  !
+  function psum_int_ary2d(var) result(varsum)
+    !
+    ! arguments
+    integer,intent(in) :: var(:,:)
+    integer,allocatable :: varsum(:,:)
+    !
+    ! local data
+    integer :: ierr,nsize1,nsize2,nsize
+    !
+    nsize1=size(var,1)
+    nsize2=size(var,2)
+    nsize=nsize1*nsize2
+    !
+    allocate(varsum(nsize1,nsize2))
+    !
+    call mpi_allreduce(var,varsum,nsize,mpi_integer,mpi_sum,           &
+                                                    mpi_comm_world,ierr)
+    !
+    return
+    !
+  end function psum_int_ary2d
+  !
+  real(8) function  psum_r8(var,comm)
+    !
+    ! arguments
+    real(8),intent(in) :: var
+    integer,intent(in),optional :: comm
+    !
+    ! local data
+    integer :: ierr,comms
+    !
+    if(present(comm)) then
+      comms=comm
+    else
+      comms=mpi_comm_world
+    endif
+    !
+    call mpi_allreduce(var,psum_r8,1,mpi_real8,mpi_sum,comms,ierr)
+    !
+  end function psum_r8
+  !
+  function psum_r8_ary(var,comm) result(varsum)
+    !
+    ! arguments
+    real(8),intent(in) :: var(:)
+    integer,intent(in),optional :: comm
+    real(8),allocatable :: varsum(:)
+    !
+    ! local data
+    integer :: ierr,nsize,comms
+    !
+    nsize=size(var)
+    !
+    if(present(comm)) then
+      comms=comm
+    else
+      comms=mpi_comm_world
+    endif
+    !
+    allocate(varsum(nsize))
+    !
+    call mpi_allreduce(var,varsum,nsize,mpi_real8,mpi_sum,comms,ierr)
+    !
+    return
+    !
+  end function psum_r8_ary
+  !
+  function psum_r8_ary_2d(var,comm) result(varsum)
+    !
+    ! arguments
+    real(8),intent(in) :: var(:,:)
+    integer,intent(in),optional :: comm
+    real(8),allocatable :: varsum(:,:)
+    !
+    ! local data
+    integer :: ierr,nsize1,nsize2,comm_use
+    !
+    if(present(comm)) then
+      comm_use=comm
+    else
+      comm_use=mpi_comm_world
+    endif
+    !
+    nsize1=size(var,1)
+    nsize2=size(var,2)
+    !
+    allocate(varsum(nsize1,nsize2))
+    !
+    call mpi_allreduce(var,varsum,nsize1*nsize2,mpi_real8,mpi_sum,     &
+                                                          comm_use,ierr)
+    !
+    return
+    !
+  end function psum_r8_ary_2d
+  !
+  function psum_r8_ary_3d(var,comm) result(varsum)
+    !
+    ! arguments
+    real(8),intent(in) :: var(:,:,:)
+    integer,intent(in),optional :: comm
+    real(8),allocatable :: varsum(:,:,:)
+    !
+    ! local data
+    integer :: ierr,nsize1,nsize2,nsize3,comm_use
+    !
+    if(present(comm)) then
+      comm_use=comm
+    else
+      comm_use=mpi_comm_world
+    endif
+    !
+    nsize1=size(var,1)
+    nsize2=size(var,2)
+    nsize3=size(var,3)
+    !
+    allocate(varsum(nsize1,nsize2,nsize3))
+    !
+    call mpi_allreduce(var,varsum,nsize1*nsize2*nsize3,mpi_real8,     &
+                                                 mpi_sum,comm_use,ierr)
+    !
+    return
+    !
+  end function psum_r8_ary_3d
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine psum.                                   |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This function is used to get the max number of all ranks          |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 07-October-2019: Created by J. Fang @ STFC Daresbury Laboratory   |
+  !| 09-January-2020: add a real8 interface, by J. Fang @ STFC         |
+  !|                   Daresbury Laboratory                            |
+  !+-------------------------------------------------------------------+
+  integer function  pmax_int(var)
+    !
+    ! arguments
+    integer,intent(in) :: var
+    !
+    ! local data
+    integer :: ierr
+    !
+    call mpi_allreduce(var,pmax_int,1,mpi_integer,mpi_max,             &
+                                                    mpi_comm_world,ierr)
+    !
+  end function pmax_int
+  !
+  integer(8) function  pmax_int8(var)
+    !
+    ! arguments
+    integer(8),intent(in) :: var
+    !
+    ! local data
+    integer :: ierr
+    !
+    call mpi_allreduce(var,pmax_int8,1,mpi_integer8,mpi_max,          &
+                                                    mpi_comm_world,ierr)
+    !
+  end function pmax_int8
+  !
+  function  pmax_int4_array1d(var) result(vout)
+    !
+    ! arguments
+    integer(4),intent(in) :: var(:)
+    integer(4) :: vout(1:size(var))
+    !
+    ! local data
+    integer :: ierr,nsize
+    !
+    nsize=size(var)
+    !
+    call mpi_allreduce(var,vout,nsize,mpi_integer4,mpi_max,          &
+                                                    mpi_comm_world,ierr)
+    !
+  end function pmax_int4_array1d
+  !
+  function  pmax_int8_array1d(var) result(vout)
+    !
+    ! arguments
+    integer(8),intent(in) :: var(:)
+    integer(8) :: vout(1:size(var))
+    !
+    ! local data
+    integer :: ierr,nsize
+    !
+    nsize=size(var)
+    !
+    call mpi_allreduce(var,vout,nsize,mpi_integer8,mpi_max,          &
+                                                    mpi_comm_world,ierr)
+    !
+  end function pmax_int8_array1d
+  !
+  function  pmax_r8_array2d(var) result(vout)
+    !
+    ! arguments
+    real(8),intent(in) :: var(:,:)
+    real(8),allocatable :: vout(:,:)
+    !
+    ! local data
+    integer :: ierr,nsize1,nsize2
+    !
+    nsize1=size(var,1)
+    nsize2=size(var,2)
+    !
+    allocate(vout(nsize1,nsize2))
+    !
+    call mpi_allreduce(var,vout,nsize1*nsize2,mpi_real8,mpi_max,      &
+                                                    mpi_comm_world,ierr)
+    !
+  end function pmax_r8_array2d
+  !
+  function  pmax_r8_array3d(var) result(vout)
+    !
+    ! arguments
+    real(8),intent(in) :: var(:,:,:)
+    real(8),allocatable :: vout(:,:,:)
+    !
+    ! local data
+    integer :: ierr,nsize1,nsize2,nsize3
+    !
+    nsize1=size(var,1)
+    nsize2=size(var,2)
+    nsize3=size(var,3)
+    !
+    allocate(vout(nsize1,nsize2,nsize3))
+    !
+    call mpi_allreduce(var,vout,nsize1*nsize2*nsize3,mpi_real8,mpi_max,  &
+                                                      mpi_comm_world,ierr)
+    !
+  end function pmax_r8_array3d
+  !
+  real(8) function  pmax_r8(var)
+    !
+    ! arguments
+    real(8),intent(in) :: var
+    !
+    ! local data
+    integer :: ierr
+    !
+    call mpi_allreduce(var,pmax_r8,1,mpi_real8,mpi_max,               &
+                                                    mpi_comm_world,ierr)
+    !
+  end function pmax_r8
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine pmax.                                   |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| Thes functions are used to get the min number of all ranks        |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 09-January-2020: Created by J. Fang @ STFC Daresbury Laboratory   |
+  !+-------------------------------------------------------------------+
+  integer function  pmin_int(var)
+    !
+    ! arguments
+    integer,intent(in) :: var
+    !
+    ! local data
+    integer :: ierr
+    !
+    call mpi_allreduce(var,pmin_int,1,mpi_integer,mpi_min,             &
+                                                    mpi_comm_world,ierr)
+    !
+  end function pmin_int
+  !
+  real(8) function  pmin_r8(var)
+    !
+    ! arguments
+    real(8),intent(in) :: var
+    !
+    ! local data
+    integer :: ierr
+    !
+    call mpi_allreduce(var,pmin_r8,1,mpi_real8,mpi_min,               &
+                                                    mpi_comm_world,ierr)
+    !
+  end function pmin_r8
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine pmin.                                   |
+  !+-------------------------------------------------------------------+
+  !
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! this subroutine is used to message passing grids coordinates.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  ! writen by fang jian, 2010-09-02.
+  !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
+  !
+  !+-------------------------------------------------------------------+
+  !| The wraper of MPI_Wtime                                           |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 28-November-2019: Created by J. Fang @ STFC Daresbury Laboratory  |
+  !+-------------------------------------------------------------------+
+  real(8) function ptime()
+    !
+    ptime=MPI_Wtime()
+    !
+    return
+    !
+  end function ptime
+  !+-------------------------------------------------------------------+
+  !| The end of the function ptime.                                    |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to synconize immbnod(jb)%inmg             |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 16-Jul-2021: Created by J. Fang @ STFC Daresbury Laboratory       |
+  !+-------------------------------------------------------------------+
+  subroutine syncinmg(asboun)
+    !
+    use commtype,  only : sboun
+    !
+    ! arguments
+    type(sboun),intent(inout) :: asboun
+    !
+    ! local data
+    integer :: ierr,jrank
+    real(8) :: vta(0:mpirankmax),vtmin
+    integer :: ijk(3,0:mpirankmax)
+    !
+    call mpi_allgather(asboun%dis_imga_inmg,1,mpi_real8,              &
+                       vta,1,mpi_real8,mpi_comm_world,ierr)
+    call mpi_allgather(asboun%inmg,3,mpi_integer,              &
+                       ijk,3,mpi_integer,mpi_comm_world,ierr)
+    !
+    ! print*,asboun%dis_imga_inmg,asboun%inmg
+    vtmin=1.d15
+    do jrank=0,mpirankmax
+      !
+      if(vta(jrank)<vtmin) then
+        vtmin=vta(jrank)
+        asboun%dis_imga_inmg=vtmin
+        asboun%inmg=ijk(:,jrank)
+      endif
+      !
+    enddo
+    !
+  end subroutine syncinmg
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine syncinmg.                               |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to synconize immbnod(jb)%isup             |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 16-Jul-2021: Created by J. Fang @ STFC Daresbury Laboratory       |
+  !+-------------------------------------------------------------------+
+  subroutine syncisup(asboun,snodes,nsnode)
+    !
+    use commtype,  only : sboun
+    !
+    ! arguments
+    type(sboun),intent(inout) :: asboun
+    integer,intent(in) :: snodes(:,:)
+    integer,intent(in) :: nsnode
+    !
+    ! local data
+    integer :: jb
+    integer :: ns_tab(0:mpirankmax)
+    integer,allocatable :: sb_int(:,:),sbt_int(:,:)
+    !
+    call ptabupd(var=nsnode,table=ns_tab)
+    !
+    allocate(sb_int(3,nsnode))
+    !
+    do jb=1,nsnode
+      sb_int(:,jb)=snodes(jb,:)
+    enddo
+    !
+    call pgather(sb_int,sbt_int)
+    !
+    call rmdup(sbt_int)
+    !
+    if(size(sbt_int,2)>0) then
+      !
+      allocate(asboun%isup(size(sbt_int,2),3))
+      !
+      do jb=1,size(sbt_int,2)
+        asboun%isup(jb,:)=sbt_int(:,jb)
+      enddo
+      !
+    else
+      print*,' !! WARNING !! no supporting nodes can be found @ syncisup'
+      stop
+    endif
+    !
+    ! if(size(sbt_int,2)>9) then
+    !   print*,mpirank,'|',nsnode,size(sbt_int,2)
+    !   print*,sbt_int(:,:)
+    !   print*,'---------------------------'
+    !   print*,sbt_int(:,:)
+    !   stop
+    ! endif
+    !
+    !
+    ! do jb=1,nsnode
+    !   sb_rea(:,jb)=var(jb)%x(:)
+    ! enddo
+    ! call mpi_allgather(snodes,1,mpi_integer,              &
+    !                    vta,   1,mpi_integer, mpi_comm_world,ierr)
+    
+    ! print*,mpirank,'|',sbt_int
+    !
+  end subroutine syncisup
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine syncisup.                               |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to synconize immbnod(jb)%weig             |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 16-Jul-2021: Created by J. Fang @ STFC Daresbury Laboratory       |
+  !+-------------------------------------------------------------------+
+  subroutine syncweig(asboun)
+    !
+    use commtype,  only : sboun
+    !
+    ! arguments
+    type(sboun),intent(inout) :: asboun
+    !
+    ! local data
+    integer :: jb,nweig
+    real(8),allocatable :: sb_rea(:)
+    real(8) :: epslion=1.d-16
+    real(8) :: varcon
+    !
+    nweig=size(asboun%weig)
+    !
+    allocate(sb_rea(nweig))
+    !
+    sb_rea=asboun%weig
+    !
+    sb_rea=psum(sb_rea)
+    !
+    varcon=0.d0
+    do jb=1,nweig
+      !
+      if(sb_rea(jb)<=epslion) then
+        sb_rea=0.d0
+        sb_rea(jb)=1.d0
+        varcon=1.d0
+        exit
+      else
+        sb_rea(jb)=1.d0/sb_rea(jb)
+        varcon=varcon+sb_rea(jb)
+      endif
+      !
+    enddo
+    sb_rea=sb_rea/varcon
+    !
+    asboun%weig=sb_rea
+    !
+    deallocate(sb_rea)
+    !
+    return
+    !
+  end subroutine syncweig
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine syncisup.                               |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| this subroutine removes duplicate entries from a sorted array     | 
+  !+-------------------------------------------------------------------+
+  !| ======                                                            | 
+  !| AUTHOR                                                            |
+  !| ------                                                            |
+  !| 15-Oct-2018:  CREATED by J. Fang @ STFC Daresbury Laboratory      |
+  !+-------------------------------------------------------------------+
+  subroutine rmdup_i4(ary)
+    !
+    ! arguments
+    integer,allocatable,intent(inout) :: ary(:)
+    !
+    ! local variable
+    integer :: i,nsz,nh,is
+    logical,allocatable :: mask(:)
+    integer,allocatable :: buffer(:)
+    !
+    if(.not. allocated(ary)) return
+    !
+    nsz=size(ary)
+    !
+    allocate(mask(nsz))
+    !
+    mask=.true.
+    nh=nsz
+    do i=nsz,2,-1
+      if(any(ary(1:i-1)==ary(i))) then
+        mask(i)=.false.
+        nh=nh-1
+      endif
+    enddo
+    !
+    allocate(buffer(1:nh))
+    is=0
+    do i=1,nsz
+      if(mask(i)) then
+        is=is+1
+        buffer(is)=ary(i)
+      endif
+    enddo
+    !
+    deallocate(ary)
+    call move_alloc(buffer,ary)
+    !
+    deallocate(mask)
+    !
+    !print*,ary
+    !print*,'============='
+  end subroutine rmdup_i4
+  !
+  subroutine rmdup_i4_2d(ary)
+    !
+    ! arguments
+    integer,allocatable,intent(inout) :: ary(:,:)
+    !
+    ! local variable
+    integer :: i,j,nsz2,nsz1,nh,js
+    logical,allocatable :: mask(:)
+    integer,allocatable :: buffer(:,:)
+    !
+    if(.not. allocated(ary)) return
+    !
+    nsz1=size(ary,1)
+    nsz2=size(ary,2)
+    !
+    allocate(mask(nsz2))
+    !
+    mask=.true.
+    nh=nsz2
+    do j=nsz2,2,-1
+      !
+      do i=1,j-1
+        !
+        if(ary(1,i)==ary(1,j) .and. &
+           ary(2,i)==ary(2,j) .and. &
+           ary(3,i)==ary(3,j) ) then
+          !
+          mask(j)=.false.
+          nh=nh-1
+          !
+          exit
+          !
+        endif
+        !
+      enddo
+      !
+    enddo
+    !
+    allocate(buffer(1:nsz1,1:nh))
+    js=0
+    do j=1,nsz2
+      if(mask(j)) then
+        js=js+1
+        buffer(:,js)=ary(:,j)
+      endif
+    enddo
+    !
+    deallocate(ary)
+    call move_alloc(buffer,ary)
+    !
+    deallocate(mask)
+    !
+  end subroutine rmdup_i4_2d
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine rmdup_i4.                               |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| Thes functions are used to get the or of logical variable of all  |
+  !|  ranks                                                            |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 09-January-2020: Created by J. Fang @ STFC Daresbury Laboratory   |
+  !+-------------------------------------------------------------------+
+  logical function por_log(var)
+    !
+    ! arguments
+    logical,intent(in) :: var
+    !
+    ! local data
+    integer :: ierr
+    !
+    call mpi_allreduce(var,por_log,1,mpi_logical,MPI_LOR,              &
+                                                    mpi_comm_world,ierr)
+    !
+    return
+    !
+  end function por_log
+  !
+  function por_log_array1d(var) result(vout)
+    !
+    ! arguments
+    logical,intent(in) :: var(:)
+    logical :: vout(size(var))
+    !
+    ! local data
+    integer :: ierr
+    integer :: nsize
+    !
+    nsize=size(var)
+    !
+    call mpi_allreduce(var,vout,nsize,mpi_logical,MPI_LOR,             &
+                                                    mpi_comm_world,ierr)
+    !
+    return
+    !
+  end function por_log_array1d
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine por_log.                                |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| The  function is to determin icell from different processor.      |
+  !| the fisrt non-zero icell will be broadcasted to all processors    |
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 09-January-2020: Created by J. Fang @ STFC Daresbury Laboratory   |
+  !+-------------------------------------------------------------------+
+  function pgeticell(icellin) result(icellout)
+    !
+    ! arguments
+    integer,intent(in) :: icellin(3)
+    integer :: icellout(3)
+    !
+    ! local data
+    integer :: ierr,jrank
+    integer :: recvbuf(1:3,0:mpirankmax)
+    !
+    call mpi_gather(icellin,3,mpi_integer,                             &
+                    recvbuf,3,mpi_integer, 0 , mpi_comm_world,ierr)
+    !
+    if(mpirank==0) then
+      do jrank=0,mpirankmax
+        if(recvbuf(1,jrank)>0 .and. recvbuf(2,jrank)>0 ) then
+          icellout(:)=recvbuf(:,jrank)
+          exit
+        endif
+      enddo
+    endif
+    !
+    call bcast(icellout)
+    !
+    return
+    !
+  end function pgeticell
+  !
+  subroutine pcollecicell(icellin,abound)
+    !
+    use commtype, only : sboun
+    !
+    ! arguments
+    integer(8),intent(in) :: icellin(:)
+    type(sboun),intent(inout) :: abound(:)
+    !
+    ! local data
+    integer :: ierr,jrank,csize,jb
+    integer(8),allocatable :: icellout(:)
+    !
+    csize=size(icellin)
+    !
+    allocate(icellout(1:csize))
+    !
+    icellout=pmax(icellin)
+    !
+    ! allocate(recvbuf(1:csize,1:3,0:mpirankmax),icellout(1:csize,1:3))
+    ! !
+    ! call mpi_gather(icellin,csize*3,mpi_integer,                       &
+    !                 recvbuf,csize*3,mpi_integer, 0 , mpi_comm_world,ierr)
+    ! !
+    ! if(mpirank==0) then
+    !   !
+    !   do jb=1,csize
+    !     !
+    !     do jrank=0,mpirankmax
+    !       if(recvbuf(jb,1,jrank)>0) then
+    !         ! the first non-zero element
+    !         icellout(jb,:)=recvbuf(jb,:,jrank)
+    !         exit
+    !       endif
+    !     enddo
+    !     !
+    !     if(jrank==mpirankmax+1) then
+    !       print*,' ** jrank=',jrank
+    !       print*,' ** jb=',jb
+    !       print*,' ** recvbuf(jb,1,:)',recvbuf(jb,1,:)
+    !       stop ' ERROR 1 @ pcollecicell: all icell is 0'
+    !     endif
+    !     !
+    !   enddo
+    !   !
+    ! endif
+    ! !
+    ! call bcast(icellout)
+    !
+    do jb=1,csize
+      call ijk2int8(int8=icellout(jb),i3a=abound(jb)%icell,mode='1>>3')
+      ! abound(jb)%icell=icellout(jb,:)
+    enddo
+    !
+    ! deallocate(recvbuf,icellout)
+    deallocate(icellout)
+    !
+    return
+    !
+  end subroutine pcollecicell
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine pcollecicell.                           |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is used to read a profile                         !
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 13-08-2021  | Created by J. Fang @ Warrington                     |
+  !| 05-10-2023  | moved here by J. Fang @ Daresbury                   |
+  !+-------------------------------------------------------------------+
+  subroutine preadprofile(filename,dir,var1,var2,var3,var4,var5,skipline)
+    !
+    use commvar,   only : im,jm,km,ia,ja,ka
+    use utility,   only : isnum
+    !
+    ! arguments
+    character(len=*),intent(in) :: filename,dir
+    integer,intent(in),optional :: skipline
+    real(8),optional,intent(out) ::  var1(0:),var2(0:),var3(0:),       &
+                                     var4(0:),var5(0:)
+    !
+    ! local data
+    integer :: fh,ios,i,j,n,offset,nsk,nvar
+    real(8),allocatable,dimension(:,:) :: data,scat
+    integer :: table(0:mpirankmax),displs(0:mpirankmax)
+    character(len=32) :: c1
+    !
+    if(present(skipline)) then
+      nsk=skipline
+    else
+      nsk=0
+    endif
+    !
+    fh=get_unit()
+    !
+    if( present(var5) ) then
+      nvar=5
+    elseif( present(var4)  ) then
+      nvar=4
+    elseif( present(var3) ) then
+      nvar=3
+    elseif( present(var2) ) then
+      nvar=2
+    elseif( present(var1) ) then
+      nvar=1
+    else
+      stop ' !! ERROR 1  define nvar @  readprofile '
+    endif
+    !
+    allocate(data(1:nvar,0:ja))
+    !
+    if(dir=='j') then
+      !
+      if(mpirank==0) then
+        !
+        open(fh,file=filename,action='read',form='formatted')
+        do n=1,nsk
+          read(fh,*)
+        enddo
+        !
+        ios=0
+        do while(ios==0)
+          !
+          read(fh,*,iostat=ios)c1
+          !
+          if(isnum(c1)==2 .or. isnum(c1)==3 .or. isnum(c1)==4) then
+            ! the first line with a real number
+            backspace(fh)
+            !
+            exit
+            !
+          endif
+          !
+        enddo
+        !
+        ! start from real number
+        do j=0,ja
+          read(fh,*)(data(i,j),i=1,nvar)
+        enddo
+        !
+        close(fh)
+        write(*,'(3A,I0)')'  >> ',filename,' using file handle : ',fh
+        !
+      endif
+      !
+      call ptabupd(var=jm+1,table=table)
+      !
+      call ptabupd(var=jg0*nvar,table=displs)
+      !
+      call pscatter(data,scat,table,offset=displs,rank=0)
+      !
+      ! print*,mpirank,'|',displs(mpirank)
+      ! do j=0,jm
+      !   print*,mpirank,'|',j+jg0,scat(1,j+1)
+      ! enddo
+      !
+      if( present(var5) )  var5(0:jm)=scat(5,1:1+jm)
+      if( present(var4) )  var4(0:jm)=scat(4,1:1+jm)
+      if( present(var3) )  var3(0:jm)=scat(3,1:1+jm)
+      if( present(var2) )  var2(0:jm)=scat(2,1:1+jm)
+      if( present(var1) )  var1(0:jm)=scat(1,1:1+jm)
+      !
+      deallocate(data,scat)
+      !
+    else
+      !
+      print*,' !! dir not set yet @ readprofile !!'
+      stop
+      !
+    endif
+    !
+    return
+    !
+  end subroutine preadprofile
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine preadprofile.                           |
+  !+-------------------------------------------------------------------+
+  !
+  !+-------------------------------------------------------------------+
+  !| This subroutine is to convert three integer4 number to one        |
+  !|  integer4 number                                                  | 
+  !+-------------------------------------------------------------------+
+  !| CHANGE RECORD                                                     |
+  !| -------------                                                     |
+  !| 20-06-2022  | Created by J. Fang @ Warrington                     |
+  !+-------------------------------------------------------------------+
+  subroutine ijk2int8(i,j,k,int8,i3a,mode)
+    !
+    integer(8) :: int8
+    integer,optional :: i,j,k
+    integer,optional :: i3a(3)
+    character(len=*),intent(in) :: mode
+    integer, parameter :: i16 = selected_int_kind(16)
+    !
+    if(mode=='3>>1') then
+      if(present(i) .and. present(j) .and. present(k)) then
+        int8=i+j*1000000+k*1000000000000_i16
+      elseif(present(i3a)) then
+        int8=i3a(1)+i3a(2)*1000000+i3a(3)*1000000000000_i16
+      endif
+    elseif(mode=='1>>3') then
+      if(present(i) .and. present(j) .and. present(k)) then
+        k=int8/1000000000000_i16
+        j=int8/1000000-k*1000000
+        i=int8-k*1000000000000_i16-j*1000000
+      elseif(present(i3a)) then
+        i3a(3)=int8/1000000000000_i16
+        i3a(2)=int8/1000000-i3a(3)*1000000
+        i3a(1)=int8-i3a(3)*1000000000000_i16-i3a(2)*1000000
+      endif
+    else
+      stop ' mode not defined @ ijk2int8'
+    endif
+    !
+  end subroutine ijk2int8
+  !+-------------------------------------------------------------------+
+  !| The end of the subroutine ijk2int8.                              |
+  !+-------------------------------------------------------------------+
+  !
+  pure function size_integer(var) result(nsize)
+    !
+    integer,allocatable,intent(in) :: var(:)
+    integer :: nsize
+    !
+    if(allocated(var)) then
+      nsize=size(var)
+    else
+      nsize=0
+    endif
+    !
+    return
+    !
+  end function size_integer
+  !
+end module parallel
+!+---------------------------------------------------------------------+
+!| The end of the module parallel.                                     |
+!+---------------------------------------------------------------------+
