@@ -50,20 +50,9 @@ program Bastr
   endif
   !
   ! Solution !
-  do j=1,jm
-  do i=1,im
-    u1spe(i,j)=CMPLX(u1(i,j,0),0.d0,C_INTPTR_T);
-    u2spe(i,j)=CMPLX(u2(i,j,0),0.d0,C_INTPTR_T);
-  end do
-  end do
-  !
-  call fft2d(u1spe)
-  call fft2d(u2spe)
   !
   !
   do while(nstep<=maxstep)
-    !
-    call RK3
     !
     do j=1,jm
     do i=1,im
@@ -77,7 +66,8 @@ program Bastr
     !
     call spectra_compute(hand_f, hand_g)
     !
-    if(mpirank==0)  print *, "nstep, Es, Ed = ", nstep, Esspe, Edspe
+    if(mpirank==0)  print *, "nstep, Es, Ed, Eall= ", nstep, Esspe, Edspe, &
+                        Esspe+Edspe
     !
     if(lwsequ .and. nstep==nxtwsequ) then
       !
@@ -93,6 +83,8 @@ program Bastr
     !
     nstep = nstep + 1 
     time = time + deltat
+    !
+    call RK3
     !
   end do
   !

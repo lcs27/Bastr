@@ -554,7 +554,7 @@ module fftwlink
         include 'fftw3-mpi.f03'
         ! This subroutine allocates the common variables.
         !
-        allocate(u1(0:im,0:jm,0:km), u2(0:im,0:jm,0:km))
+        allocate(u1(1:im,1:jm,0:km), u2(1:im,1:jm,0:km))
         allocate(k1(1:im,1:jm),k2(1:im,1:jm))
         !
         call allocate_fftw_complex(u1spe, c_u1spe)

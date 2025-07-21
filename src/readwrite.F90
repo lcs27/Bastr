@@ -38,6 +38,8 @@ module readwrite
       read(fh,*)ref_tem,reynolds
       read(fh,'(/)')
       read(fh,*)lwsequ,maxstep,feqwsequ,deltat
+      read(fh,'(/)')
+      read(fh,*)lforce, target_energy
       print *,' >> ',trim(inputfile),' ... done'
       !
       print *, 'ia:', ia, 'ja:', ja, 'ka:', ka
@@ -52,6 +54,21 @@ module readwrite
     call bcast(maxstep)
     call bcast(feqwsequ)
     call bcast(deltat)
+    call bcast(lforce)
+    call bcast(target_energy)
+    !
+    if(mpirank==0) then
+      !
+      print *, 'ia=', ia, ' ja=', ja, ' ka=', ka
+      print *, 'ref_tem=', ref_tem
+      print *, 'reynolds=', reynolds
+      print *, 'lwsequ=', lwsequ
+      print *, 'maxstep=', maxstep
+      print *, 'feqwsequ=', feqwsequ
+      print *, 'deltat=', deltat
+      print *, 'lforce=', lforce
+      print *, 'target_energy=', target_energy
+    endif
     !
   end subroutine
   !
@@ -67,8 +84,8 @@ module readwrite
     ! Initial field read
     !
     call h5io_init(filename=infilename,mode='read')
-    call h5read(varname='u1', var=u1(0:im,0:jm,0:km),mode = modeio)
-    call h5read(varname='u2', var=u2(0:im,0:jm,0:km),mode = modeio)
+    call h5read(varname='u1', var=u1(1:im,1:jm,0:km),mode = modeio)
+    call h5read(varname='u2', var=u2(1:im,1:jm,0:km),mode = modeio)
     call h5io_end
     call mpi_barrier(mpi_comm_world,ierr)
     if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
@@ -88,8 +105,8 @@ module readwrite
     !
     ! outfilename='outdat/flowfield.h5'
     call h5io_init(trim(outfilename),mode='write')
-    call h5write(varname='u1',var=u1(0:im,0:jm,0:km),mode=modeio)
-    call h5write(varname='u2',var=u2(0:im,0:jm,0:km),mode=modeio)
+    call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode=modeio)
+    call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode=modeio)
     call h5io_end
     if(mpirank == 0) then
       call h5srite(varname='nstep',var=nstep,filename=trim(outfilename))

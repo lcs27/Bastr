@@ -15,6 +15,7 @@ module solution
         implicit none
         !
         integer :: i,j
+        real(8) :: energy, factor
         ! Warning : The entrance of RK3 must be a Fourier-Transformed u1spe and u2spe
         ! Step 1
         ! 
@@ -53,6 +54,25 @@ module solution
         end do
         end do
         !
+        if(lforce)then
+            energy = 0.d0
+            do j=1,jm
+            do i=1,im
+                energy = energy + (u1(i,j,0)**2 + u2(i,j,0)**2) / 2.d0
+            end do
+            end do
+            energy = psum(energy)/(ia*ja)
+            !
+            factor = sqrt(target_energy/energy)
+            !
+            energy = 0.d0
+            do j=1,jm
+            do i=1,im
+                u1(i,j,0) = factor * u1(i,j,0) 
+                u2(i,j,0) = factor * u2(i,j,0) 
+            end do
+            end do
+        endif
         !
     end subroutine RK3
     !
