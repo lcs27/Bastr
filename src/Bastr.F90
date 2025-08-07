@@ -14,7 +14,7 @@ program Bastr
   use utility
   include 'fftw3-mpi.f03'
   !
-  integer :: hand_f, hand_g, i,j
+  integer :: hand_f, hand_g, hand_a, i,j
   !
   call mpiinitial
   !
@@ -47,6 +47,8 @@ program Bastr
                       firstline='ns ti Es Ed')
       call listinit(filename='log/stat2d_spect.dat',handle=hand_g, &
                       firstline='ns ti k Es Ed')
+      call listinit(filename='log/stat2d_velgrad.dat',handle=hand_a, &
+                      firstline='ns ti umumtheta2 umumijji u2theta')
   endif
   !
   ! Solution !
@@ -65,6 +67,8 @@ program Bastr
     call fft2d(u2spe)
     !
     call spectra_compute(hand_f, hand_g)
+    !
+    call velgrad_calculate(hand_a)
     !
     if(mpirank==0)  print *, "nstep, Es, Ed, Eall= ", nstep, Esspe, Edspe, &
                         Esspe+Edspe

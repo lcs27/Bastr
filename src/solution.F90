@@ -199,6 +199,51 @@ module solution
         !
     end subroutine spectra_compute
     !
+    !
+    subroutine velgrad_calculate(hand_a)
+        !
+        use commvar, only: u1spe, u2spe, k1, k2, u1x1, u1x2, u2x1, u2x2
+        use fftwlink, only: ifft2d
+        use utility, only: listwrite
+        implicit none
+        integer, intent(in) :: hand_a
+        integer :: i,j
+        real(8) :: div, umumtheta2, umumijji, u2theta
+        !
+        u1x1 = imag * u1spe * k1 
+        u1x2 = imag * u1spe * k2
+        u2x1 = imag * u2spe * k1
+        u2x2 = imag * u2spe * k2
+        !
+        call ifft2d(u1x1)
+        call ifft2d(u1x2)
+        call ifft2d(u2x1)
+        call ifft2d(u2x2)
+        !
+        umumtheta2 = 0.d0
+        umumijji = 0.d0
+        u2theta = 0.d0
+        do j=1,jm
+        do i=1,im
+            div = dreal(u1x1(i,j)) + dreal(u2x2(i,j))
+            umumtheta2 = umumtheta2 + div**2 * (u1(i,j,0)**2 + u2(i,j,0)**2)
+            umumijji = umumijji + (dreal(u1x1(i,j))**2 + dreal(u2x2(i,j))**2 + &
+                                  2.d0*dreal(u1x2(i,j))*dreal(u2x1(i,j))) * &
+                                  (u1(i,j,0)**2 + u2(i,j,0)**2)
+            u2theta = u2theta + div * (u1(i,j,0)**2 + u2(i,j,0)**2)
+        end do
+        end do
+        !
+        umumtheta2 = psum(umumtheta2)/(ia*ja)
+        umumijji = psum(umumijji)/(ia*ja)
+        u2theta = psum(u2theta)/(ia*ja)
+        !
+        if(lio) then
+            call listwrite(hand_a,umumtheta2,umumijji,u2theta)
+        endif
+        !
+    end subroutine velgrad_calculate
+    !
     subroutine quantity_prepare
         use commvar, only: nstep, nxtwsequ, feqwsequ, filenumb, time, nu
         use tool, only: GenerateWave
