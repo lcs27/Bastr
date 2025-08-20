@@ -33,8 +33,10 @@ module commvar
   logical :: lwsequ
   !
   ! Middle process for ut calculate
-  type(C_PTR) :: c_u1spe, c_u2spe, c_u1x1, c_u1x2, c_u2x1, c_u2x2, c_u1xixi, c_u2xixi
+  type(C_PTR) :: c_u1spe, c_u2spe, c_u1x1, c_u1x2, c_u2x1, c_u2x2, c_u1xixi, c_u2xixi, c_thetaxixi
   complex(C_DOUBLE_COMPLEX), pointer, dimension(:,:) :: u1spe,u2spe, u1x1, u1x2, u2x1, u2x2, u1xixi, u2xixi
+  complex(C_DOUBLE_COMPLEX), pointer, dimension(:,:) :: thetaxixi
+  real(8) :: eta_min
   !
   ! Middle process for RK3
   type(C_PTR) :: c_u1tA, c_u2tA,c_u1tB, c_u2tB,c_u1tC, c_u2tC

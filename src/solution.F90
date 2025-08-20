@@ -144,6 +144,7 @@ module solution
         !
         integer :: i, j, kOrdinal
         real(8) :: kk, dk
+        real(8) :: k2Edspe, kdEdspe, k2dEdspe
         complex(8) :: u1s,u2s,u1d,u2d
         complex(8) ::  usspe,udspe
         !
@@ -154,6 +155,9 @@ module solution
         Ecount = 0
         Edspe = 0.d0
         Esspe = 0.d0
+        k2Edspe = 0.d0
+        kdEdspe = 0.d0
+        k2dEdspe = 0.d0
         !
         do j=1,jm
         do i=1,im
@@ -185,6 +189,9 @@ module solution
             !
             Edspe = Edspe + (udspe*dconjg(udspe))/2
             Esspe = Esspe + (usspe*dconjg(usspe))/2
+            k2Edspe = k2Edspe + (udspe*dconjg(udspe))/2 * (kk ** 2)
+            kdEdspe = kdEdspe + (udspe*dconjg(udspe))/2 * (kk ** 0.5)
+            k2dEdspe = k2dEdspe + (udspe*dconjg(udspe))/2 * (kk ** 2.5)
             !
         end do
         end do
@@ -198,9 +205,12 @@ module solution
         enddo
         Edspe = psum(Edspe)
         Esspe = psum(Esspe)
+        k2Edspe = psum(k2Edspe)
+        kdEdspe = psum(kdEdspe)
+        k2dEdspe = psum(k2dEdspe)
         !
         if(lio) then
-            call listwrite(hand_f,Esspe,Edspe)
+            call listwrite(hand_f,Esspe,Edspe,k2Edspe,kdEdspe,k2dEdspe)
             do i=1,allkmax
             call listwrite(hand_g,kn(i),Es(i),Ed(i))
             enddo
@@ -212,27 +222,39 @@ module solution
     !
     subroutine velgrad_calculate(hand_a)
         !
-        use commvar, only: u1spe, u2spe, k1, k2, u1x1, u1x2, u2x1, u2x2
+        use commvar, only: u1spe, u2spe, k1, k2, u1x1, u1x2, u2x1, u2x2, &
+                            u1xixi, u2xixi, thetaxixi, eta_min
         use fftwlink, only: ifft2d
         use utility, only: listwrite
         implicit none
         integer, intent(in) :: hand_a
         integer :: i,j
-        real(8) :: div, umumtheta2, umumijji, u2theta
+        real(8) :: div, umumtheta2, umumijji, u2theta, dissp
+        real(8), allocatable, dimension(:,:) :: kk
+        allocate(kk(1:im,1:jm))
         !
         u1x1 = imag * u1spe * k1 
         u1x2 = imag * u1spe * k2
         u2x1 = imag * u2spe * k1
         u2x2 = imag * u2spe * k2
+        kk = k1*k1 + k2*k2
+        u1xixi = - u1spe * kk
+        u2xixi = - u2spe * kk
+        thetaxixi = - imag * (u1spe * k1 * kk + u2spe * k2 * kk)
         !
         call ifft2d(u1x1)
         call ifft2d(u1x2)
         call ifft2d(u2x1)
         call ifft2d(u2x2)
+        call ifft2d(u1xixi)
+        call ifft2d(u2xixi)
+        call ifft2d(thetaxixi)
         !
         umumtheta2 = 0.d0
         umumijji = 0.d0
         u2theta = 0.d0
+        dissp = 0.d0
+        eta_min = 2*3.14
         do j=1,jm
         do i=1,im
             div = dreal(u1x1(i,j)) + dreal(u2x2(i,j))
@@ -241,15 +263,21 @@ module solution
                                   2.d0*dreal(u1x2(i,j))*dreal(u2x1(i,j))) * &
                                   (u1(i,j,0)**2 + u2(i,j,0)**2)
             u2theta = u2theta + div * (u1(i,j,0)**2 + u2(i,j,0)**2)
+            dissp = dissp + 2.d0 * u1(i,j,0) * div * dreal(u1xixi(i,j)) &
+                          + 2.d0 * u2(i,j,0) * div * dreal(u2xixi(i,j)) &
+                          + (u1(i,j,0)**2 + u2(i,j,0)**2) * dreal(thetaxixi(i,j))
+            eta_min = min(eta_min, dsqrt(nu/abs(div)))
         end do
         end do
         !
         umumtheta2 = psum(umumtheta2)/(ia*ja)
         umumijji = psum(umumijji)/(ia*ja)
         u2theta = psum(u2theta)/(ia*ja)
+        dissp = psum(dissp)/(ia*ja)
+        eta_min = pmin(eta_min)
         !
         if(lio) then
-            call listwrite(hand_a,umumtheta2,umumijji,u2theta)
+            call listwrite(hand_a,umumtheta2,umumijji,u2theta,dissp,eta_min)
         endif
         !
     end subroutine velgrad_calculate

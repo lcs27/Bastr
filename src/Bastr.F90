@@ -44,11 +44,15 @@ program Bastr
   !
   if(mpirank==0) then
       call listinit(filename='log/stat2d_specall.dat',handle=hand_f, &
-                      firstline='ns ti Es Ed')
+                      firstline='ns ti Es Ed k2Ed kdEd k2dEd')
       call listinit(filename='log/stat2d_spect.dat',handle=hand_g, &
                       firstline='ns ti k Es Ed')
       call listinit(filename='log/stat2d_velgrad.dat',handle=hand_a, &
-                      firstline='ns ti umumtheta2 umumijji u2theta')
+                      firstline='ns ti umumtheta2 umumijji u2theta dissp etamin')
+      if(lforce) then
+        call listinit(filename='log/factor_output.dat',handle=hand_fo, &
+                        firstline='ns ti factor')
+      end if
   endif
   !
   ! Solution !
