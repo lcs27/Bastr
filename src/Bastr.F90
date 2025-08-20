@@ -14,7 +14,7 @@ program Bastr
   use utility
   include 'fftw3-mpi.f03'
   !
-  integer :: hand_f, hand_g, hand_a, i,j
+  integer :: hand_f, hand_g, hand_a, hand_fo, i,j
   !
   call mpiinitial
   !
@@ -88,7 +88,7 @@ program Bastr
     nstep = nstep + 1 
     time = time + deltat
     !
-    call RK3
+    call RK3(hand_fo)
     !
   end do
   !

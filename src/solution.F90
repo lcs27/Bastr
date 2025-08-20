@@ -10,10 +10,12 @@ module solution
     !
     contains
     !
-    subroutine RK3
+    subroutine RK3(hand_fo)
         !
+        use utility, only: listwrite
         implicit none
         !
+        integer, intent(in) :: hand_fo
         integer :: i,j
         real(8) :: energy, factor
         ! Warning : The entrance of RK3 must be a Fourier-Transformed u1spe and u2spe
@@ -72,6 +74,10 @@ module solution
                 u2(i,j,0) = factor * u2(i,j,0) 
             end do
             end do
+            !
+            if (lio) then
+                call listwrite(hand_fo,factor)
+            endif
         endif
         !
     end subroutine RK3
