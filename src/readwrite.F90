@@ -39,8 +39,8 @@ module readwrite
       read(fh,'(/)')
       read(fh,*)lwsequ,maxstep,feqwsequ,deltat
       read(fh,'(/)')
-      read(fh,*)lforce, target_energy
-      print *,' >> ',trim(inputfile),' ... done'
+      read(fh,*)lforce, target_energy, lprojectd
+      print *,' << ',trim(inputfile),' ... done'
       !
       print *, 'ia:', ia, 'ja:', ja, 'ka:', ka
     endif
@@ -56,6 +56,7 @@ module readwrite
     call bcast(deltat)
     call bcast(lforce)
     call bcast(target_energy)
+    call bcast(lprojectd)
     !
     if(mpirank==0) then
       !
@@ -68,6 +69,7 @@ module readwrite
       print *, 'deltat=', deltat
       print *, 'lforce=', lforce
       print *, 'target_energy=', target_energy
+      print *, 'lprojectd=', lprojectd
     endif
     !
   end subroutine

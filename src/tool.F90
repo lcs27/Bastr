@@ -142,18 +142,47 @@ module tool
     !
     subroutine dealiasing(field)
         ! Applies 2/3-rule dealiasing to a 2D spectral field
+        ! The entered field should be in spectral space
         use commvar, only : k1, k2
         implicit none
         complex(8), dimension(:,:), intent(inout) :: field
         integer :: i, j, cutoff
+        real(8) :: k
         !
         cutoff = int(ia / 3)
         do j=1,jm
         do i=1,im
-            if (abs(k1(i,j)) > cutoff .or. abs(k2(i,j)) > cutoff) then
+            k = sqrt(k1(i,j)**2 + k2(i,j)**2)
+            if (k > cutoff) then
                 field(i,j) = 0.d0
             end if
         end do
         end do
     end subroutine dealiasing
+    !
+    subroutine projection(u1spe, u2spe)
+        use commvar, only : k1, k2
+        implicit none
+        complex(8), dimension(:,:), intent(inout) :: u1spe, u2spe
+        complex(8) :: usspe
+        integer :: i, j
+        real(8) :: kk
+        !
+        do j=1,jm
+        do i=1,im
+            kk=dsqrt(k1(i,j)**2+k2(i,j)**2)
+            if(kk>0.5d0)then
+                ! udspe = u1spe(i,j)*k1(i,j)/kk + u2spe(i,j)*k2(i,j)/kk
+                ! u1spe(i,j) =  udspe*k1(i,j)/kk
+                ! u2spe(i,j) =  udspe*k2(i,j)/kk
+                usspe = u1spe(i,j)*k2(i,j)/kk - u2spe(i,j)*k1(i,j)/kk
+                u1spe(i,j) = u1spe(i,j) - usspe*k2(i,j)/kk
+                u2spe(i,j) = u2spe(i,j) + usspe*k1(i,j)/kk
+            else
+                u1spe(i,j) = 0.d0
+                u2spe(i,j) = 0.d0
+            end if
+        end do
+        end do
+    end subroutine projection
 end module tool

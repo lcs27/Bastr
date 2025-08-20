@@ -45,7 +45,7 @@ module commvar
   real(8) :: Esspe, Edspe
   integer :: allkmax = 200
   !
-  logical :: lforce
+  logical :: lforce, lprojectd
   real(8) :: target_energy
   !
   contains

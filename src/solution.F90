@@ -105,7 +105,7 @@ module solution
         do i=1,im
             !
             u1t(i,j) = - u1(i,j,0) * dreal(u1x1(i,j)) - u2(i,j,0) * dreal(u1x2(i,j)) + nu * dreal(u1xixi(i,j))
-            u2t(i,j) = - u1(i,j,0) * dreal(u2x1(i,j)) + u2(i,j,0) * dreal(u2x2(i,j)) + nu * dreal(u2xixi(i,j))
+            u2t(i,j) = - u1(i,j,0) * dreal(u2x1(i,j)) - u2(i,j,0) * dreal(u2x2(i,j)) + nu * dreal(u2xixi(i,j))
             !
         end do
         end do
@@ -117,6 +117,10 @@ module solution
         !
         call dealiasing(u1t)
         call dealiasing(u2t)
+        !
+        if(lprojectd)then
+            call projection(u1t, u2t)
+        endif
         !
         call ifft2d(u1t)
         call ifft2d(u2t)
