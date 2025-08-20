@@ -15,15 +15,6 @@ module fftwlink
     implicit none
     !
     !
-    interface fftw_grid_fence
-        module procedure fftw_grid_fence_2D
-        module procedure fftw_grid_fence_3D
-    end interface
-    !
-    interface fftw_fence_grid
-        module procedure fftw_fence_grid_2D
-        module procedure fftw_fence_grid_3D
-    end interface
     !
     integer(C_INTPTR_T) :: alloc_local,iafftw,jafftw,kafftw,imfftw,jmfftw,kmfftw
     integer :: nproc, myid, ierr
@@ -289,202 +280,7 @@ module fftwlink
         !
     end subroutine mpisizedis_half_fftw
     ! !
-    subroutine fftwprepare_forcing
-        !
-        if(ndims == 2) then
-            call fftwprepare_forcing2D
-        else
-            stop "Not implemented error! fftwprepare_forcing3D"
-        endif
-    end subroutine fftwprepare_forcing
     !
-    subroutine fftwprepare_forcing2D
-        !
-        include 'fftw3-mpi.f03'
-        include 'mpif.h' 
-        !
-        integer :: fh,irk,jrk,krk
-        integer(C_INTPTR_T) :: i0fftw,j0fftw,k0fftw
-        integer :: i,ierr
-        integer, allocatable, dimension(:) :: ids,irks,jrks,krks,ims,jms,kms,i0s,j0s,k0s
-        !
-        call mpi_barrier(mpi_comm_world,ierr)
-        !
-        rooti0 = isize * (mpirank/isize)
-        jmf = jm/isize
-        !
-        if((jmf*ia) .ne. (im*jm))then
-            print *,'jmf = ', jmf, 'ia=', ia, 'im=', im, 'jm=', jm
-            stop 'fftwprepare_forcing2D: Parallel ranking not match!'
-        endif
-        !
-        allocate(counts_grid(0:mpirankmax),disp_grid(0:mpirankmax))
-        !
-        counts_grid = 0
-        disp_grid = 0
-        counts_grid(rooti0) = im*jm
-        do i = (rooti0+1), (rooti0+isize-1)
-            counts_grid(i) = im*jm
-            disp_grid(i) =disp_grid(i-1) + counts_grid(i-1)
-        enddo
-        !
-        allocate(counts_fence(0:mpirankmax),disp_fence(0:mpirankmax))
-        counts_fence = 0
-        disp_fence = 0
-        counts_fence(rooti0) = ia*jmf
-        do i = (rooti0+1), (rooti0+isize-1)
-            counts_fence(i) = ia*jmf
-            disp_fence(i) =disp_fence(i-1) + counts_fence(i-1)
-        enddo
-        !
-        iafftw = ia
-        jafftw = ja
-        kafftw = ka
-        i0fftw = 0
-        j0fftw = 0
-        k0fftw = 0
-        irk = 0
-        jrk = 0
-        krk = 0
-        !
-        alloc_local = fftw_mpi_local_size_2d(jafftw, iafftw,MPI_COMM_WORLD, jmfftw, j0fftw)
-        !
-        imfftw = iafftw
-        kmfftw = 0
-        !
-        i0f = i0fftw
-        j0f = j0fftw
-        k0f = k0fftw
-        !
-        imf = ia
-        kmf = 0
-        if(jmfftw .ne. jmf)then
-            print *, 'mpirank = ', mpirank, 'jmfftw=',jmfftw, 'jmf=', jmf
-            stop "fftwprepare_forcing2D: Rank not matching!"
-        endif
-        !
-        allocate(ids(0:mpirankmax),irks(0:mpirankmax),jrks(0:mpirankmax),krks(0:mpirankmax),&
-                ims(0:mpirankmax),jms(0:mpirankmax),kms(0:mpirankmax),i0s(0:mpirankmax),    &
-                j0s(0:mpirankmax),k0s(0:mpirankmax))
-        !
-        do i=0,mpirankmax
-            if(mpirank == i) then
-                ids(i) = mpirank
-                irks(i) = 0
-                jrks(i) = mpirank
-                krks(i) = 0
-                ims(i) = imf
-                jms(i) = jmf
-                kms(i) = kmf 
-                i0s(i) = i0f
-                j0s(i) = j0f
-                k0s(i) = k0f
-            endif
-            call mpi_bcast(ids(i),1,mpi_integer,i,mpi_comm_world,ierr)
-            call mpi_bcast(irks(i),1,mpi_integer,i,mpi_comm_world,ierr)
-            call mpi_bcast(jrks(i),1,mpi_integer,i,mpi_comm_world,ierr)
-            call mpi_bcast(krks(i),1,mpi_integer,i,mpi_comm_world,ierr)
-            call mpi_bcast(ims(i),1,mpi_integer,i,mpi_comm_world,ierr)
-            call mpi_bcast(jms(i),1,mpi_integer,i,mpi_comm_world,ierr)
-            call mpi_bcast(kms(i),1,mpi_integer,i,mpi_comm_world,ierr)
-            call mpi_bcast(i0s(i),1,mpi_integer,i,mpi_comm_world,ierr)
-            call mpi_bcast(j0s(i),1,mpi_integer,i,mpi_comm_world,ierr)
-            call mpi_bcast(k0s(i),1,mpi_integer,i,mpi_comm_world,ierr)
-        enddo
-        !
-        if(mpirank == 0)then
-            open(fh,file='datin/parallelfftw.info',form='formatted')
-            write(fh,"(3(A9,1x))")'isize','jsize','ksize'
-            write(fh,"(3(I9,1x))")1,mpirank,1
-            write(fh,"(10(A9,1x))")'Rank','Irk','Jrk','Krk','IM','JM','KM', 'I0','J0','K0'
-            do i=0,mpirankmax
-                write(fh,"(10(I9,1x))")ids(i),irks(i),jrks(i),krks(i),ims(i),jms(i),kms(i),i0s(i),j0s(i),k0s(i)
-            enddo
-            close(fh)
-            print *,' << parallelfftw.info ... done !'
-        endif
-        !
-        deallocate(ids,irks,jrks,krks,ims,jms,kms,i0s,j0s,k0s)
-        !
-    end subroutine fftwprepare_forcing2D
-    !
-    subroutine fftw_grid_fence_2D(gridarray_t,fencearray)
-        !
-        use parallel
-        !
-        ! gridarray_t is transposed!
-        real(8), intent(in), dimension(:,:)  ::  gridarray_t 
-        real(8), intent(out), dimension(:,:) ::  fencearray
-        real(8), allocatable, dimension(:,:) :: global_t, global
-        !
-        allocate(global_t(1:jm,1:ia),global(1:ia,1:jm))
-        !
-        !
-        call mpi_gatherv(gridarray_t,im*jm, MPI_REAL8, &
-        global_t,counts_grid,disp_grid,MPI_REAL8,rooti0, &
-        MPI_COMM_WORLD, ierr)
-        !
-        global = transpose(global_t)
-        !
-        call mpi_scatterv(global,counts_fence,disp_fence,MPI_REAL8,&
-                        fencearray,ia*jmf,MPI_REAL8,rooti0,&
-                            MPI_COMM_WORLD,ierr)
-        !
-        deallocate(global_t,global)
-        !
-    end subroutine fftw_grid_fence_2D
-    !
-    subroutine fftw_fence_grid_2D(fencearray,gridarray_t)
-        !
-        use parallel
-        !
-        ! gridarray_t is transposed!
-        real(8), intent(in), dimension(:,:)  :: fencearray
-        real(8), intent(out), dimension(:,:) :: gridarray_t
-        real(8), allocatable, dimension(:,:) :: global_t, global
-        !
-        allocate(global_t(1:jm,1:ia),global(1:ia,1:jm))
-        !
-        call mpi_gatherv(fencearray,ia*jmf, MPI_REAL8, &
-        global,counts_fence,disp_fence,MPI_REAL8,rooti0,  &
-        MPI_COMM_WORLD, ierr)
-        !
-        global_t = transpose(global)
-        !
-        call mpi_scatterv(global_t,counts_grid,disp_grid,MPI_REAL8,&
-                            gridarray_t,im*jm,MPI_REAL8,rooti0,  &
-                            MPI_COMM_WORLD,ierr)
-        !
-        deallocate(global_t,global)
-        !
-    end subroutine fftw_fence_grid_2D
-    !
-    subroutine fftw_grid_fence_3D(gridarray_t13,fencearray)
-        !
-        !
-        use parallel
-        !
-        ! gridarray_t is transposed!
-        real(8), intent(in), dimension(:,:,:)  ::  gridarray_t13
-        real(8), intent(out), dimension(:,:,:) ::  fencearray
-        real(8), allocatable, dimension(:,:,:) :: global_t, global
-        !
-        ! Under implementation
-        !
-    end subroutine fftw_grid_fence_3D
-    !
-    subroutine fftw_fence_grid_3D(fencearray,gridarray_t13)
-        !
-        use parallel
-        !
-        ! gridarray_t is transposed!
-        real(8), intent(in), dimension(:,:,:)  :: fencearray
-        real(8), intent(out), dimension(:,:,:) :: gridarray_t13
-        real(8), allocatable, dimension(:,:,:) :: global_t, global
-        !
-        ! Under implementation
-        !
-    end subroutine fftw_fence_grid_3D
     !
     subroutine prepareplan_fftw_plan
         !
@@ -565,6 +361,7 @@ module fftwlink
         call allocate_fftw_complex(u2x2,   c_u2x2)
         call allocate_fftw_complex(u1xixi, c_u1xixi)
         call allocate_fftw_complex(u2xixi, c_u2xixi)
+        call allocate_fftw_complex(thetaxixi, c_thetaxixi)
         call allocate_fftw_complex(u1tA,     c_u1tA)
         call allocate_fftw_complex(u2tA,     c_u2tA)
         call allocate_fftw_complex(u1tB,     c_u1tB)
@@ -594,6 +391,7 @@ module fftwlink
         call fftw_free(c_u2x2)
         call fftw_free(c_u1xixi)
         call fftw_free(c_u2xixi)
+        call fftw_free(c_thetaxixi)
         call fftw_free(c_u1tA)
         call fftw_free(c_u2tA)
         call fftw_free(c_u1tB)
