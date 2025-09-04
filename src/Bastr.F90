@@ -51,8 +51,8 @@ program Bastr
       call listinit(filename='log/stat2d_spect.dat',handle=hand_g, &
                       firstline='ns ti k Es Ed')
       call listinit(filename='log/stat2d_velgrad.dat',handle=hand_a, &
-                      firstline='ns ti umumtheta2 umumijji u2theta dissp etamin')
-      if(lforce) then
+                      firstline='ns ti umumtheta2 umumijji u2theta dissp etamin Tay ReTay Kol')
+      if(forcemethod>0) then
         call listinit(filename='log/factor_output.dat',handle=hand_fo, &
                         firstline='ns ti factor')
       end if
@@ -95,7 +95,10 @@ program Bastr
     nstep = nstep + 1 
     time = time + deltat
     !
-    call RK3(hand_fo)
+    call RK3
+    !
+    !
+    call forcing(hand_fo)
     !
   end do
   !

@@ -39,7 +39,7 @@ module readwrite
       read(fh,'(/)')
       read(fh,*)maxstep,deltat,lwsequ,feqwsequ,lwspectra,feqwspe,kmax
       read(fh,'(/)')
-      read(fh,*)lforce, target_energy, lprojectd
+      read(fh,*)forcemethod, target_energy, lprojectd
       print *,' << ',trim(inputfile),' ... done'
       !
       print *, 'ia:', ia, 'ja:', ja, 'ka:', ka
@@ -56,7 +56,7 @@ module readwrite
     call bcast(lwspectra)
     call bcast(feqwspe)
     call bcast(deltat)
-    call bcast(lforce)
+    call bcast(forcemethod)
     call bcast(target_energy)
     call bcast(lprojectd)
     call bcast(kmax)
@@ -72,7 +72,7 @@ module readwrite
       print *, 'feqwsequ=', feqwsequ
       print *, 'lwspectra=', lwspectra
       print *, 'feqwspe=', feqwspe
-      print *, 'lforce=', lforce
+      print *, 'forcemethod=', forcemethod
       print *, 'target_energy=', target_energy
       print *, 'lprojectd=', lprojectd
     endif

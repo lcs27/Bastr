@@ -30,7 +30,7 @@ module commvar
   !
   integer :: nstep,maxstep,feqwsequ,filenumb, nxtwsequ,feqwspe,nxtwspe, kmax
   real(8) :: nu, ref_tem, reynolds, deltat, time
-  logical :: lwsequ
+  logical :: lwsequ,lwspectra
   !
   ! Middle process for ut calculate
   type(C_PTR) :: c_u1spe, c_u2spe, c_u1x1, c_u1x2, c_u2x1, c_u2x2, c_u1xixi, c_u2xixi, c_thetaxixi
@@ -41,14 +41,17 @@ module commvar
   ! Middle process for RK3
   type(C_PTR) :: c_u1tA, c_u2tA,c_u1tB, c_u2tB,c_u1tC, c_u2tC
   complex(C_DOUBLE_COMPLEX), pointer, dimension(:,:) :: u1tA, u2tA, u1tB, u2tB, u1tC, u2tC
+  type(C_PTR) :: c_force1, c_force2
+  complex(C_DOUBLE_COMPLEX), pointer, dimension(:,:) :: force1, force2
   !
   real(8), allocatable, dimension(:) :: Es,Ed,kn
   integer, allocatable, dimension(:) :: Ecount
   real(8) :: Esspe, Edspe
   integer :: allkmax
   !
-  logical :: lforce, lprojectd
+  logical :: lprojectd
   real(8) :: target_energy
+  integer :: forcemethod
   !
   contains
   !

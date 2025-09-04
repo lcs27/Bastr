@@ -10,14 +10,10 @@ module solution
     !
     contains
     !
-    subroutine RK3(hand_fo)
+    subroutine RK3
         !
-        use utility, only: listwrite
         implicit none
-        !
-        integer, intent(in) :: hand_fo
         integer :: i,j
-        real(8) :: energy, factor
         ! Warning : The entrance of RK3 must be a Fourier-Transformed u1spe and u2spe
         ! Step 1
         ! 
@@ -56,7 +52,23 @@ module solution
         end do
         end do
         !
-        if(lforce)then
+        !
+    end subroutine RK3
+    !
+    subroutine forcing(hand_fo)
+        use utility, only: listwrite
+        implicit none
+        !
+        integer, intent(in) :: hand_fo
+        integer :: i,j
+        real(8) :: energy, factor
+        integer :: forcek
+        real(8) :: kk,dk,E
+        !
+        if(forcemethod == 1)then
+            ! Linear forcing with f_i = (factor-1) * u_i
+            ! s.t. the kinetic energy is maintained at target_energy
+            ! All in physical space
             energy = 0.d0
             do j=1,jm
             do i=1,im
@@ -67,7 +79,6 @@ module solution
             !
             factor = sqrt(target_energy/energy)
             !
-            energy = 0.d0
             do j=1,jm
             do i=1,im
                 u1(i,j,0) = factor * u1(i,j,0) 
@@ -78,9 +89,62 @@ module solution
             if (lio) then
                 call listwrite(hand_fo,factor)
             endif
+            !
+        elseif(forcemethod == 2) then
+            ! Linear forcing in a band of wave numbers in spectral space
+            ! TODO: to be tested
+            forcek = 5
+            dk = 0.5d0
+            !
+            do j=1,jm
+            do i=1,im
+                u1spe(i,j)=CMPLX(u1(i,j,0),0.d0,C_INTPTR_T);
+                u2spe(i,j)=CMPLX(u2(i,j,0),0.d0,C_INTPTR_T);
+            end do
+            end do
+            !
+            call fft2d(u1spe)
+            call fft2d(u2spe)
+            !
+            do j=1,jm
+            do i=1,im
+                kk=dsqrt(k1(i,j)**2+k2(i,j)**2)
+                !
+                if((kk - dk)<forcek .and. (kk + dk)>forcek) then
+                    force1(i,j) = u1spe(i,j)
+                    force2(i,j) = u2spe(i,j)
+                else
+                    force1(i,j) = 0.d0
+                    force2(i,j) = 0.d0
+                endif
+            end do
+            end do
+            !
+            call ifft2d(force1)
+            call ifft2d(force2)
+            !
+            E = 0.d0
+            do j=1,jm
+            do i=1,im
+                E = E + dreal(force1(i,j))**2 + dreal(force2(i,j))**2
+            end do
+            end do
+            E = psum(E)/(ia*ja)
+            factor = max(sqrt(target_energy/E) - 1.d0, 0.d0)
+            !
+            do j=1,jm
+            do i=1,im
+                u1(i,j,0) = u1(i,j,0) + factor * dreal(force1(i,j))
+                u2(i,j,0) = u2(i,j,0) + factor * dreal(force2(i,j))
+            end do
+            end do
+            !
+            if (lio) then
+                call listwrite(hand_fo,factor,E)
+            endif
+            !
         endif
-        !
-    end subroutine RK3
+    end subroutine forcing
     !
     subroutine compute_ut(u1t, u2t)
         !

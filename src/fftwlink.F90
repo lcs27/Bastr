@@ -368,6 +368,8 @@ module fftwlink
         call allocate_fftw_complex(u2tB,     c_u2tB)
         call allocate_fftw_complex(u1tC,     c_u1tC)
         call allocate_fftw_complex(u2tC,     c_u2tC)
+        call allocate_fftw_complex(force1,   c_force1)
+        call allocate_fftw_complex(force2,   c_force2)
         !
         allocate(Es(0:allkmax),Ed(0:allkmax),kn(0:allkmax),Ecount(0:allkmax))
         !
@@ -398,5 +400,7 @@ module fftwlink
         call fftw_free(c_u2tB)
         call fftw_free(c_u1tC)
         call fftw_free(c_u2tC)
+        call fftw_free(c_force1)
+        call fftw_free(c_force2)
     end subroutine deallocation
 end module fftwlink
