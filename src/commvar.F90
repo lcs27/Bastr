@@ -28,7 +28,7 @@ module commvar
   real(8), allocatable, dimension(:,:) :: k1,k2
   !
   !
-  integer :: nstep,maxstep,feqwsequ,filenumb, nxtwsequ
+  integer :: nstep,maxstep,feqwsequ,filenumb, nxtwsequ,feqwspe,nxtwspe, kmax
   real(8) :: nu, ref_tem, reynolds, deltat, time
   logical :: lwsequ
   !
@@ -45,7 +45,7 @@ module commvar
   real(8), allocatable, dimension(:) :: Es,Ed,kn
   integer, allocatable, dimension(:) :: Ecount
   real(8) :: Esspe, Edspe
-  integer :: allkmax = 200
+  integer :: allkmax
   !
   logical :: lforce, lprojectd
   real(8) :: target_energy

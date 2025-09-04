@@ -37,7 +37,7 @@ module readwrite
       read(fh,'(/)')
       read(fh,*)ref_tem,reynolds
       read(fh,'(/)')
-      read(fh,*)lwsequ,maxstep,feqwsequ,deltat
+      read(fh,*)maxstep,deltat,lwsequ,feqwsequ,lwspectra,feqwspe,kmax
       read(fh,'(/)')
       read(fh,*)lforce, target_energy, lprojectd
       print *,' << ',trim(inputfile),' ... done'
@@ -53,20 +53,25 @@ module readwrite
     call bcast(lwsequ)
     call bcast(maxstep)
     call bcast(feqwsequ)
+    call bcast(lwspectra)
+    call bcast(feqwspe)
     call bcast(deltat)
     call bcast(lforce)
     call bcast(target_energy)
     call bcast(lprojectd)
+    call bcast(kmax)
     !
     if(mpirank==0) then
       !
       print *, 'ia=', ia, ' ja=', ja, ' ka=', ka
       print *, 'ref_tem=', ref_tem
       print *, 'reynolds=', reynolds
-      print *, 'lwsequ=', lwsequ
       print *, 'maxstep=', maxstep
-      print *, 'feqwsequ=', feqwsequ
       print *, 'deltat=', deltat
+      print *, 'lwsequ=', lwsequ
+      print *, 'feqwsequ=', feqwsequ
+      print *, 'lwspectra=', lwspectra
+      print *, 'feqwspe=', feqwspe
       print *, 'lforce=', lforce
       print *, 'target_energy=', target_energy
       print *, 'lprojectd=', lprojectd

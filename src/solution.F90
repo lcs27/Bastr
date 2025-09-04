@@ -84,7 +84,6 @@ module solution
     !
     subroutine compute_ut(u1t, u2t)
         !
-        use commvar, only: u1x1, u1x2, u2x1, u2x2, u1xixi, u2xixi
         use fftwlink, only: fft2d, ifft2d
         use tool, only : dealiasing
         !
@@ -132,10 +131,9 @@ module solution
         call ifft2d(u2t)
         !
     end subroutine compute_ut
-
+    !
     subroutine spectra_compute(hand_f, hand_g)
     !
-        use commvar, only: Ed, Es, kn, Ecount, Esspe, Edspe, k1, k2
         use parallel, only: psum
         use utility, only: listwrite
         !
@@ -211,9 +209,15 @@ module solution
         !
         if(lio) then
             call listwrite(hand_f,Esspe,Edspe,k2Edspe,kdEdspe,k2dEdspe)
-            do i=1,allkmax
-            call listwrite(hand_g,kn(i),Es(i),Ed(i))
-            enddo
+            if(lwspectra .and. nstep==nxtwspe) then
+                !
+                do i=1,kmax
+                    call listwrite(hand_g,kn(i),Es(i),Ed(i))
+                enddo
+                !
+                nxtwspe = min(nxtwspe + feqwspe, maxstep)
+                !
+            endif
         endif
         !
         !
@@ -229,7 +233,8 @@ module solution
         implicit none
         integer, intent(in) :: hand_a
         integer :: i,j
-        real(8) :: div, umumtheta2, umumijji, u2theta, dissp
+        real(8) :: div, umumtheta2, umumijji, u2theta, dissp,epsilon
+        real(8) :: urms, ufluc, Taylength, ReTay, dudx2, Kollength
         real(8), allocatable, dimension(:,:) :: kk
         allocate(kk(1:im,1:jm))
         !
@@ -255,6 +260,9 @@ module solution
         u2theta = 0.d0
         dissp = 0.d0
         eta_min = 2*3.14
+        dudx2 = 0.d0
+        urms = 0.d0
+        epsilon = 0.d0
         do j=1,jm
         do i=1,im
             div = dreal(u1x1(i,j)) + dreal(u2x2(i,j))
@@ -266,7 +274,11 @@ module solution
             dissp = dissp + 2.d0 * u1(i,j,0) * div * dreal(u1xixi(i,j)) &
                           + 2.d0 * u2(i,j,0) * div * dreal(u2xixi(i,j)) &
                           + (u1(i,j,0)**2 + u2(i,j,0)**2) * dreal(thetaxixi(i,j))
+            epsilon = epsilon + nu * (dreal(u1x2(i,j)) - dreal(u2x1(i,j)))**2 &
+                              + 4.d0/3.d0 * nu * div**2
             eta_min = min(eta_min, dsqrt(nu/abs(div)))
+            urms = urms+ u1(i,j,0)**2 + u2(i,j,0)**2
+            dudx2 = dudx2 + dreal(u1x1(i,j))**2 + dreal(u2x2(i,j))**2
         end do
         end do
         !
@@ -275,25 +287,35 @@ module solution
         u2theta = psum(u2theta)/(ia*ja)
         dissp = psum(dissp)/(ia*ja)
         eta_min = pmin(eta_min)
+        urms = sqrt(psum(urms)/(ia*ja))
+        dudx2 = psum(dudx2)/(ia*ja)
+        epsilon = psum(epsilon)/(ia*ja)
+        !
+        ufluc     = urms/sqrt(2.d0)
+        Taylength = ufluc/sqrt(dudx2/2.d0)
+        ReTay     = ufluc * Taylength / nu
+        Kollength = sqrt(sqrt(nu**3/epsilon))
         !
         if(lio) then
-            call listwrite(hand_a,umumtheta2,umumijji,u2theta,dissp,eta_min)
+            call listwrite(hand_a,umumtheta2,umumijji,u2theta,dissp,eta_min, Taylength, ReTay, Kollength)
         endif
         !
     end subroutine velgrad_calculate
     !
     subroutine quantity_prepare
-        use commvar, only: nstep, nxtwsequ, feqwsequ, filenumb, time, nu
+        use commvar, only: nstep, nxtwsequ, feqwsequ, filenumb, time, nu, nxtwspe, feqwspe, allkmax, ia, ja
         use tool, only: GenerateWave
         use fftwlink, only: j0f
         use parallel, only: mpirank
         nstep = 0
         nxtwsequ = min(feqwsequ, maxstep)
+        nxtwspe = 0
         filenumb = 1
         call GenerateWave(j0f,k1,k2)
         time = 0.d0
-        nu = miucal(ref_tem)/Reynolds
+        nu = miucal(1.d0)/Reynolds
         if(mpirank == 0) print *, 'nu=', nu
+        if(mpirank==0) print *, 'allkmax=', allkmax
     end subroutine quantity_prepare
     !
     real(8) function miucal(temper)

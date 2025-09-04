@@ -31,6 +31,9 @@ program Bastr
   call parallelini
   if(mpirank==0)  print*, '** parallelini done!'
   !
+  allkmax = ceiling(real(sqrt(2.d0)/3*min(ia,ja)))
+  allkmax = min(allkmax, kmax)
+  !
   call allocation
   if(mpirank==0)  print*, '** allocation done!'
   !
