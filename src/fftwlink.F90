@@ -15,7 +15,6 @@ module fftwlink
     implicit none
     !
     !
-    !
     integer(C_INTPTR_T) :: alloc_local,iafftw,jafftw,kafftw,imfftw,jmfftw,kmfftw
     integer :: nproc, myid, ierr
     integer :: i0f,j0f,k0f
@@ -290,15 +289,16 @@ module fftwlink
         include 'fftw3-mpi.f03'
         !
         !
-        if(ndims == 2) then
+        select case(ndims)
+        case(2)
             forward_plan = fftw_mpi_plan_dft_2d(jafftw,iafftw, u1spe,u1spe, MPI_COMM_WORLD, FFTW_FORWARD, FFTW_MEASURE)
             backward_plan = fftw_mpi_plan_dft_2d(jafftw,iafftw, u1spe,u1spe, MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_MEASURE)
-        elseif(ndims == 3) then
+        case(3)
             forward_plan = fftw_mpi_plan_dft_3d(kafftw,jafftw,iafftw, u1spe,u1spe, MPI_COMM_WORLD, FFTW_FORWARD, FFTW_MEASURE)
             backward_plan = fftw_mpi_plan_dft_3d(kafftw,jafftw,iafftw, u1spe,u1spe, MPI_COMM_WORLD, FFTW_BACKWARD, FFTW_MEASURE)
-        else
+        case default
             stop 'prepareplan_fftw: Not implemented for 1D!'
-        endif
+        end select
         !
     end subroutine prepareplan_fftw_plan
     !
@@ -307,10 +307,17 @@ module fftwlink
         include 'fftw3-mpi.f03'
         !
         type(C_PTR), intent(out) :: c_pointer
-        complex(C_DOUBLE_COMPLEX), pointer, intent(out) :: array(:,:)
+        complex(C_DOUBLE_COMPLEX), pointer, intent(out) :: array(:,:,:)
         !
         c_pointer = fftw_alloc_complex(alloc_local)
-        call c_f_pointer(c_pointer, array, [imfftw, jmfftw])
+        select case(ndims)
+        case(2)
+            call c_f_pointer(c_pointer, array, [imfftw, jmfftw, int(1,C_INTPTR_T)])
+        case(3)
+            call c_f_pointer(c_pointer, array, [imfftw, jmfftw, kmfftw])
+        case default
+            stop 'allocate_fftw_complex: Not implemented for 1D!'
+        end select
         !
     end subroutine allocate_fftw_complex
   !
@@ -318,7 +325,7 @@ module fftwlink
         !
         use commvar, only: im,jm,ia,ja
         !
-        complex(C_DOUBLE_COMPLEX), pointer, intent(inout) :: array(:,:)
+        complex(C_DOUBLE_COMPLEX), pointer, intent(inout) :: array(:,:,:)
         integer :: i,j
         !
         include 'fftw3-mpi.f03'
@@ -326,23 +333,49 @@ module fftwlink
         call fftw_mpi_execute_dft(forward_plan,array,array)
         do j=1,jm
         do i=1,im
-            array(i,j)=array(i,j)/(1.d0*ia*ja)
+            array(i,j,1)=array(i,j,1)/(1.d0*ia*ja)
         end do
         end do
     end subroutine fft2d
     !
+    subroutine fft3d(array)
+        !
+        use commvar, only: im,jm,km,ia,ja,ka
+        !
+        complex(C_DOUBLE_COMPLEX), pointer, intent(inout) :: array(:,:,:)
+        integer :: i,j,k
+        !
+        include 'fftw3-mpi.f03'
+        !
+        call fftw_mpi_execute_dft(forward_plan,array,array)
+        do k=1,km
+        do j=1,jm
+        do i=1,im
+            array(i,j,k)=array(i,j,k)/(1.d0*ia*ja*ka)
+        end do
+        end do
+        end do
+    end subroutine fft3d
+    !
      subroutine ifft2d(array)
         !
-        use commvar, only: im,jm,ia,ja
-        !
-        complex(C_DOUBLE_COMPLEX), pointer, intent(inout) :: array(:,:)
-        integer :: i,j
+        complex(C_DOUBLE_COMPLEX), pointer, intent(inout) :: array(:,:,:)
         !
         include 'fftw3-mpi.f03'
         !
         call fftw_mpi_execute_dft(backward_plan,array,array)
         !
     end subroutine ifft2d
+        !
+     subroutine ifft3d(array)
+        !
+        complex(C_DOUBLE_COMPLEX), pointer, intent(inout) :: array(:,:,:)
+        !
+        include 'fftw3-mpi.f03'
+        !
+        call fftw_mpi_execute_dft(backward_plan,array,array)
+        !
+    end subroutine ifft3d
     !
     subroutine allocation
         !
@@ -350,8 +383,25 @@ module fftwlink
         include 'fftw3-mpi.f03'
         ! This subroutine allocates the common variables.
         !
+        select case(ndims)
+        case(2)
+            call allocation2D
+        case(3)
+            call allocation3D
+        case default
+            stop 'allocation: Not implemented for 1D!'
+        end select
+        !
+        allocate(Es(0:allkmax),Ed(0:allkmax),kn(0:allkmax),Ecount(0:allkmax))
+        !
+    end subroutine allocation
+    !
+    subroutine allocation2D
+        !
+        use commvar
+        include 'fftw3-mpi.f03'
         allocate(u1(1:im,1:jm,0:km), u2(1:im,1:jm,0:km))
-        allocate(k1(1:im,1:jm),k2(1:im,1:jm))
+        allocate(k1(1:im,1:jm,0:km), k2(1:im,1:jm,0:km))
         !
         call allocate_fftw_complex(u1spe, c_u1spe)
         call allocate_fftw_complex(u2spe, c_u2spe)
@@ -371,20 +421,107 @@ module fftwlink
         call allocate_fftw_complex(force1,   c_force1)
         call allocate_fftw_complex(force2,   c_force2)
         !
-        allocate(Es(0:allkmax),Ed(0:allkmax),kn(0:allkmax),Ecount(0:allkmax))
+    end subroutine allocation2D
+    !
+    subroutine allocation3D
+        use commvar
+        include 'fftw3-mpi.f03'
+        allocate(u1(1:im,1:jm,1:km), u2(1:im,1:jm,1:km), u3(1:im,1:jm,1:km))
+        allocate(k1(1:im,1:jm,1:km), k2(1:im,1:jm,1:km), k3(1:im,1:jm,1:km))
         !
-    end subroutine allocation
+        call allocate_fftw_complex(u1spe, c_u1spe)
+        call allocate_fftw_complex(u2spe, c_u2spe)
+        call allocate_fftw_complex(u3spe, c_u3spe)
+        call allocate_fftw_complex(u1x1,   c_u1x1)
+        call allocate_fftw_complex(u1x2,   c_u1x2)
+        call allocate_fftw_complex(u1x3,   c_u1x3)
+        call allocate_fftw_complex(u2x1,   c_u2x1)
+        call allocate_fftw_complex(u2x2,   c_u2x2)
+        call allocate_fftw_complex(u2x3,   c_u2x3)
+        call allocate_fftw_complex(u3x1,   c_u3x1)
+        call allocate_fftw_complex(u3x2,   c_u3x2)
+        call allocate_fftw_complex(u3x3,   c_u3x3)
+        call allocate_fftw_complex(u1xixi, c_u1xixi)
+        call allocate_fftw_complex(u2xixi, c_u2xixi)
+        call allocate_fftw_complex(u3xixi, c_u3xixi)
+        call allocate_fftw_complex(thetaxixi, c_thetaxixi)
+        call allocate_fftw_complex(u1tA,     c_u1tA)
+        call allocate_fftw_complex(u2tA,     c_u2tA)
+        call allocate_fftw_complex(u3tA,     c_u3tA)
+        call allocate_fftw_complex(u1tB,     c_u1tB)
+        call allocate_fftw_complex(u2tB,     c_u2tB)
+        call allocate_fftw_complex(u3tB,     c_u3tB)
+        call allocate_fftw_complex(u1tC,     c_u1tC)
+        call allocate_fftw_complex(u2tC,     c_u2tC)
+        call allocate_fftw_complex(u3tC,     c_u3tC)
+        call allocate_fftw_complex(force1,   c_force1)
+        call allocate_fftw_complex(force2,   c_force2)
+        call allocate_fftw_complex(force3,   c_force3)
+        !
+    end subroutine allocation3D
     !
     subroutine deallocation
         !
         use commvar
         include 'fftw3-mpi.f03'
         !
-        deallocate(u1, u2, k1,k2,Es, Ed, kn,Ecount)
+        deallocate(Es, Ed, kn,Ecount)
         !
         call fftw_destroy_plan(forward_plan)
         call fftw_destroy_plan(backward_plan)
         call fftw_mpi_cleanup()
+        
+        select case(ndims)
+        case(3)
+            call deallocation3D
+        case(2)
+            call deallocation2D
+        end select
+        !
+    end subroutine deallocation
+    !
+    subroutine deallocation3D
+        !
+        use commvar
+        include 'fftw3-mpi.f03'
+        !
+        deallocate(u1,u2,u3,k1,k2,k3)
+        call fftw_free(c_u1spe)
+        call fftw_free(c_u2spe)
+        call fftw_free(c_u3spe)
+        call fftw_free(c_u1x1)
+        call fftw_free(c_u1x2)
+        call fftw_free(c_u1x3)
+        call fftw_free(c_u2x1)
+        call fftw_free(c_u2x2)
+        call fftw_free(c_u2x3)
+        call fftw_free(c_u3x1)
+        call fftw_free(c_u3x2)
+        call fftw_free(c_u3x3)
+        call fftw_free(c_u1xixi)
+        call fftw_free(c_u2xixi)
+        call fftw_free(c_u3xixi)
+        call fftw_free(c_thetaxixi)
+        call fftw_free(c_u1tA)
+        call fftw_free(c_u2tA)
+        call fftw_free(c_u3tA)
+        call fftw_free(c_u1tB)
+        call fftw_free(c_u2tB)
+        call fftw_free(c_u3tB)
+        call fftw_free(c_u1tC)
+        call fftw_free(c_u2tC)
+        call fftw_free(c_u3tC)
+        call fftw_free(c_force1)
+        call fftw_free(c_force2)
+        call fftw_free(c_force3)
+    end subroutine deallocation3D
+    !
+    subroutine deallocation2D
+        !
+        use commvar
+        include 'fftw3-mpi.f03'
+        !
+        deallocate(u1,u2,k1,k2)
         call fftw_free(c_u1spe)
         call fftw_free(c_u2spe)
         call fftw_free(c_u1x1)
@@ -402,5 +539,5 @@ module fftwlink
         call fftw_free(c_u2tC)
         call fftw_free(c_force1)
         call fftw_free(c_force2)
-    end subroutine deallocation
+    end subroutine deallocation2D
 end module fftwlink

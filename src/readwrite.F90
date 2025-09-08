@@ -61,9 +61,26 @@ module readwrite
     call bcast(lprojectd)
     call bcast(kmax)
     !
+    if(ka == 0) then
+      if(ja == 0 ) then
+        ndims = 1
+        error stop '1D case is not implemented yet!'
+      else
+        ndims = 2
+        allkmax = ceiling(real(sqrt(2.d0)/3*min(ia,ja)))
+      endif
+    else
+      ndims = 3
+      allkmax = ceiling(real(sqrt(2.d0)/3*min(ia,ja,ka)))
+    endif
+    !
+    !
+    allkmax = min(allkmax, kmax)
+
     if(mpirank==0) then
       !
       print *, 'ia=', ia, ' ja=', ja, ' ka=', ka
+      print *, 'ndims=', ndims
       print *, 'ref_tem=', ref_tem
       print *, 'reynolds=', reynolds
       print *, 'maxstep=', maxstep
@@ -80,6 +97,19 @@ module readwrite
   end subroutine
   !
   subroutine read_initial_field
+    use commvar, only : ndims
+    select case(ndims)
+    case(2)
+      call read_initial_field2D
+    case(3)
+      call read_initial_field3D
+    case default
+      error stop 'ndims should be 2 or 3!'
+    end select
+    !
+  end subroutine read_initial_field
+  !
+  subroutine read_initial_field2D
     !
     character(len=256) :: infilename      ! Name of the input HDF5 file
     integer :: ierr                      ! Error code for MPI operations
@@ -97,9 +127,31 @@ module readwrite
     call mpi_barrier(mpi_comm_world,ierr)
     if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
   !
-  end subroutine read_initial_field
+  end subroutine read_initial_field2D
+  !
+  subroutine read_initial_field3D
+    !
+    character(len=256) :: infilename      ! Name of the input HDF5 file
+    integer :: ierr                      ! Error code for MPI operations
+    character(len=1) :: modeio           ! Mode for HDF5 read operations
+    ! read initial field
+    modeio ='h'
+    infilename='datin/flowini3d.h5'
+    !
+    ! Initial field read
+    !
+    call h5io_init(filename=infilename,mode='read')
+    call h5read(varname='u1', var=u1(1:im,1:jm,1:km),mode = modeio)
+    call h5read(varname='u2', var=u2(1:im,1:jm,1:km),mode = modeio)
+    call h5read(varname='u3', var=u3(1:im,1:jm,1:km),mode = modeio)
+    call h5io_end
+    call mpi_barrier(mpi_comm_world,ierr)
+    if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
+  !
+  end subroutine read_initial_field3D
   !
   subroutine writeflfed
+    use commvar, only : ndims
     !
     character(len=4) :: stepname
     character(len=64) :: outfilename
@@ -112,8 +164,19 @@ module readwrite
     !
     ! outfilename='outdat/flowfield.h5'
     call h5io_init(trim(outfilename),mode='write')
-    call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode=modeio)
-    call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode=modeio)
+    !
+    select case(ndims)
+    case(2)
+      call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode=modeio)
+      call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode=modeio)
+    case(3)
+      call h5write(varname='u1',var=u1(1:im,1:jm,1:km),mode=modeio)
+      call h5write(varname='u2',var=u2(1:im,1:jm,1:km),mode=modeio)
+      call h5write(varname='u3',var=u3(1:im,1:jm,1:km),mode=modeio)
+    case default
+      error stop 'ndims should be 2 or 3!'
+    end select
+    !
     call h5io_end
     if(mpirank == 0) then
       call h5srite(varname='nstep',var=nstep,filename=trim(outfilename))

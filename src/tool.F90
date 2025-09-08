@@ -7,13 +7,19 @@ module tool
         module procedure GenerateWave_3D
     end interface
     !
+    !
+    interface projection
+        module procedure projection2D
+        module procedure projection3D
+    end interface
     contains
     !
     subroutine GenerateWave_2D(j0,k1,k2)
         implicit none
         integer, intent(in) :: j0
-        real(8), dimension(:,:),intent(out) :: k1,k2
+        real(8), dimension(:,:,:),intent(out) :: k1,k2
         integer :: i,j
+        !
         !
         do j=1,jm
         do i=1,im
@@ -23,17 +29,17 @@ module tool
         endif
         !
         if(i <= (ia/2+1)) then
-            k1(i,j) = real(i-1,8)
+            k1(i,j,1) = real(i-1,8)
         else if(i<=(ia)) then
-            k1(i,j) = real(i-ia-1,8)
+            k1(i,j,1) = real(i-ia-1,8)
         else
             stop "GenerateWave Error, no wave number possible, i must smaller than ia-1 !"
         end if
         !
         if((j+j0) <= (ja/2+1)) then
-            k2(i,j) = real(j+j0-1,8)
+            k2(i,j,1) = real(j+j0-1,8)
         else if((j+j0)<=(ja)) then
-            k2(i,j) = real(j+j0-ja-1,8)
+            k2(i,j,1) = real(j+j0-ja-1,8)
         else
             stop "GenerateWave Error, no wave number possible, (j+j0) must smaller than ja-1 !"
         end if
@@ -141,48 +147,115 @@ module tool
     end function kint
     !
     subroutine dealiasing(field)
+        !
+        use commvar, only: ndims
+        !
+        implicit none
+        complex(8), dimension(:,:,:), intent(inout) :: field
+        !
+        select case(ndims)
+        case(2)
+            call dealiasing2D(field)
+        case(3)
+            call dealiasing3D(field)
+        case default
+            stop "dealiasing Error! ndims should be 2 or 3!"
+        end select
+        !
+    end subroutine dealiasing
+    !
+    subroutine dealiasing2D(field)
         ! Applies 2/3-rule dealiasing to a 2D spectral field
         ! The entered field should be in spectral space
         use commvar, only : k1, k2
         implicit none
-        complex(8), dimension(:,:), intent(inout) :: field
+        complex(8), dimension(:,:,:), intent(inout) :: field
         integer :: i, j, cutoff
         real(8) :: k
         !
         cutoff = int(ia / 3)
         do j=1,jm
         do i=1,im
-            k = sqrt(k1(i,j)**2 + k2(i,j)**2)
+            k = sqrt(k1(i,j,0)**2 + k2(i,j,0)**2)
             if (k > cutoff) then
-                field(i,j) = 0.d0
+                field(i,j,1) = 0.d0
             end if
         end do
         end do
-    end subroutine dealiasing
+    end subroutine dealiasing2D
     !
-    subroutine projection(u1spe, u2spe)
+    subroutine dealiasing3D(field)
+        ! Applies 2/3-rule dealiasing to a 3D spectral field
+        ! The entered field should be in spectral space
+        use commvar, only : k1, k2, k3
+        implicit none
+        complex(8), dimension(:,:,:), intent(inout) :: field
+        integer :: i, j, k, cutoff
+        real(8) :: kk
+        !
+        cutoff = int(ia / 3)
+        do k=1,km
+        do j=1,jm
+        do i=1,im
+            kk = sqrt(k1(i,j,k)**2 + k2(i,j,k)**2 + k3(i,j,k)**2)
+            if (kk > cutoff) then
+                field(i,j,k) = 0.d0
+            end if
+        end do
+        end do
+        end do
+    end subroutine dealiasing3D
+    !
+    subroutine projection2D(u1spe, u2spe)
         use commvar, only : k1, k2
         implicit none
-        complex(8), dimension(:,:), intent(inout) :: u1spe, u2spe
+        complex(8), dimension(:,:,:), intent(inout) :: u1spe, u2spe
         complex(8) :: usspe
         integer :: i, j
         real(8) :: kk
         !
         do j=1,jm
         do i=1,im
-            kk=dsqrt(k1(i,j)**2+k2(i,j)**2)
+            kk=dsqrt(k1(i,j,0)**2+k2(i,j,0)**2)
             if(kk>0.5d0)then
                 ! udspe = u1spe(i,j)*k1(i,j)/kk + u2spe(i,j)*k2(i,j)/kk
                 ! u1spe(i,j) =  udspe*k1(i,j)/kk
                 ! u2spe(i,j) =  udspe*k2(i,j)/kk
-                usspe = u1spe(i,j)*k2(i,j)/kk - u2spe(i,j)*k1(i,j)/kk
-                u1spe(i,j) = u1spe(i,j) - usspe*k2(i,j)/kk
-                u2spe(i,j) = u2spe(i,j) + usspe*k1(i,j)/kk
+                usspe = u1spe(i,j,1)*k2(i,j,0)/kk - u2spe(i,j,1)*k1(i,j,0)/kk
+                u1spe(i,j,1) = u1spe(i,j,1) - usspe*k2(i,j,0)/kk
+                u2spe(i,j,1) = u2spe(i,j,1) + usspe*k1(i,j,0)/kk
             else
-                u1spe(i,j) = 0.d0
-                u2spe(i,j) = 0.d0
+                u1spe(i,j,1) = 0.d0
+                u2spe(i,j,1) = 0.d0
             end if
         end do
         end do
-    end subroutine projection
+    end subroutine projection2D
+    !
+    subroutine projection3D(u1spe, u2spe, u3spe)
+        use commvar, only : k1, k2, k3
+        implicit none
+        complex(8), dimension(:,:,:), intent(inout) :: u1spe, u2spe, u3spe
+        complex(8) :: udspe
+        integer :: i, j,k
+        real(8) :: kk
+        !
+        do k=1,km
+        do j=1,jm
+        do i=1,im
+            kk = sqrt(k1(i,j,k)**2 + k2(i,j,k)**2 + k3(i,j,k)**2)
+            if(kk>0.5d0)then
+                udspe = u1spe(i,j,k)*k1(i,j,k)/kk + u2spe(i,j,k)*k2(i,j,k)/kk + u3spe(i,j,k)*k3(i,j,k)/kk
+                u1spe(i,j,k) = udspe*k1(i,j,k)/kk
+                u2spe(i,j,k) = udspe*k2(i,j,k)/kk
+                u3spe(i,j,k) = udspe*k3(i,j,k)/kk
+            else
+                u1spe(i,j,k) = 0.d0
+                u2spe(i,j,k) = 0.d0
+                u3spe(i,j,k) = 0.d0
+            end if
+        end do
+        end do
+        end do
+    end subroutine projection3D
 end module tool

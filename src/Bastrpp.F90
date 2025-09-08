@@ -41,14 +41,14 @@ program Bastrpp
   !
   if(mpirank==0)  print*, '** Entering pp process...'
   !
-  call add_field
+  call add_field_2d
   !
   if(mpirank==0)  print *, "** End!"
   !
   !
 end program Bastrpp
 
-subroutine add_field
+subroutine add_field_2d
     use stlaio,  only: get_unit
     use hdf5io
     use commvar
@@ -123,7 +123,7 @@ subroutine add_field
     !
     if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
     !
-end subroutine add_field
+end subroutine add_field_2d
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! End of the pp program
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
