@@ -226,7 +226,7 @@ module solution
         do i=1,im
             u1(i,j,k) = u1(i,j,k) + deltat * (dreal(u1tA(i,j,k)) + 4.d0 * dreal(u1tB(i,j,k)) + dreal(u1tC(i,j,k))) / 6.d0
             u2(i,j,k) = u2(i,j,k) + deltat * (dreal(u2tA(i,j,k)) + 4.d0 * dreal(u2tB(i,j,k)) + dreal(u2tC(i,j,k))) / 6.d0
-
+            u3(i,j,k) = u3(i,j,k) + deltat * (dreal(u3tA(i,j,k)) + 4.d0 * dreal(u3tB(i,j,k)) + dreal(u3tC(i,j,k))) / 6.d0
         end do
         end do
         end do
@@ -256,7 +256,7 @@ module solution
             end do
             energy = psum(energy)/(ia*ja)
             !
-            factor = sqrt(target_energy/energy)
+            factor = dsqrt(target_energy/energy)
             !
             do j=1,jm
             do i=1,im
@@ -308,7 +308,7 @@ module solution
             end do
             end do
             E = psum(E)/(ia*ja)
-            factor = max(sqrt(target_energy/E) - 1.d0, 0.d0)
+            factor = max(dsqrt(target_energy/E) - 1.d0, 0.d0)
             !
             do j=1,jm
             do i=1,im
@@ -348,7 +348,7 @@ module solution
             end do
             energy = psum(energy)/(ia*ja*ka)
             !
-            factor = sqrt(target_energy/energy)
+            factor = dsqrt(target_energy/energy)
             !
             do k=1,km
             do j=1,jm
@@ -414,7 +414,7 @@ module solution
             end do
             end do
             E = psum(E)/(ia*ja*ka)
-            factor = max(sqrt(target_energy/E) - 1.d0, 0.d0)
+            factor = max(dsqrt(target_energy/E) - 1.d0, 0.d0)
             !
             do k=1,km
             do j=1,jm
@@ -808,7 +808,7 @@ module solution
         u2theta = psum(u2theta)/(ia*ja)
         dissp = psum(dissp)/(ia*ja)
         eta_min = pmin(eta_min)
-        urms = sqrt(psum(urms)/(ia*ja))
+        urms = dsqrt(psum(urms)/(ia*ja))
         dudx2 = psum(dudx2)/(ia*ja)
         epsilon = psum(epsilon)/(ia*ja)
         !

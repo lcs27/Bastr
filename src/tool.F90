@@ -176,7 +176,7 @@ module tool
         cutoff = int(ia / 3)
         do j=1,jm
         do i=1,im
-            k = sqrt(k1(i,j,0)**2 + k2(i,j,0)**2)
+            k = dsqrt(k1(i,j,0)**2 + k2(i,j,0)**2)
             if (k > cutoff) then
                 field(i,j,1) = 0.d0
             end if
@@ -197,7 +197,7 @@ module tool
         do k=1,km
         do j=1,jm
         do i=1,im
-            kk = sqrt(k1(i,j,k)**2 + k2(i,j,k)**2 + k3(i,j,k)**2)
+            kk = dsqrt(k1(i,j,k)**2 + k2(i,j,k)**2 + k3(i,j,k)**2)
             if (kk > cutoff) then
                 field(i,j,k) = 0.d0
             end if
@@ -218,12 +218,12 @@ module tool
         do i=1,im
             kk=dsqrt(k1(i,j,0)**2+k2(i,j,0)**2)
             if(kk>0.5d0)then
-                ! udspe = u1spe(i,j)*k1(i,j)/kk + u2spe(i,j)*k2(i,j)/kk
-                ! u1spe(i,j) =  udspe*k1(i,j)/kk
-                ! u2spe(i,j) =  udspe*k2(i,j)/kk
-                usspe = u1spe(i,j,1)*k2(i,j,0)/kk - u2spe(i,j,1)*k1(i,j,0)/kk
-                u1spe(i,j,1) = u1spe(i,j,1) - usspe*k2(i,j,0)/kk
-                u2spe(i,j,1) = u2spe(i,j,1) + usspe*k1(i,j,0)/kk
+                udspe = u1spe(i,j,1)*k1(i,j,0)/kk + u2spe(i,j,1)*k2(i,j,0)/kk
+                u1spe(i,j,1) =  udspe*k1(i,j,0)/kk
+                u2spe(i,j,1) =  udspe*k2(i,j,0)/kk
+                ! usspe = u1spe(i,j,1)*k2(i,j,0)/kk - u2spe(i,j,1)*k1(i,j,0)/kk
+                ! u1spe(i,j,1) = u1spe(i,j,1) - usspe*k2(i,j,0)/kk
+                ! u2spe(i,j,1) = u2spe(i,j,1) + usspe*k1(i,j,0)/kk
             else
                 u1spe(i,j,1) = 0.d0
                 u2spe(i,j,1) = 0.d0
@@ -243,7 +243,7 @@ module tool
         do k=1,km
         do j=1,jm
         do i=1,im
-            kk = sqrt(k1(i,j,k)**2 + k2(i,j,k)**2 + k3(i,j,k)**2)
+            kk = dsqrt(k1(i,j,k)**2 + k2(i,j,k)**2 + k3(i,j,k)**2)
             if(kk>0.5d0)then
                 udspe = u1spe(i,j,k)*k1(i,j,k)/kk + u2spe(i,j,k)*k2(i,j,k)/kk + u3spe(i,j,k)*k3(i,j,k)/kk
                 u1spe(i,j,k) = udspe*k1(i,j,k)/kk
