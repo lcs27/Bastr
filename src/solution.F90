@@ -241,8 +241,8 @@ module solution
         integer, intent(in) :: hand_fo
         integer :: i,j
         real(8) :: energy, factor
-        integer :: forcek
         real(8) :: kk,dk,E
+        real(8) :: Fen,thetax, thetay, kx, ky, random_angle
         !
         if(forcemethod == 1)then
             ! Linear forcing with f_i = (factor-1) * u_i
@@ -271,7 +271,6 @@ module solution
             !
         elseif(forcemethod == 2) then
             ! Linear forcing in a band of wave numbers in spectral space
-            forcek = 5
             dk = 0.5d0
             !
             do j=1,jm
@@ -321,18 +320,77 @@ module solution
                 call listwrite(hand_fo,factor,E)
             endif
             !
+        elseif(forcemethod == 3) then
+            ! Random forcing in a band of wave numbers in spectral space
+            dk = 0.5d0
+            !
+            !
+            if(mpirank==0)then
+                call random_number(thetax)
+                call random_number(thetay)
+            endif
+            !
+            call bcast(thetax)
+            call bcast(thetay)
+            !
+            do j=1,jm
+            do i=1,im
+                kx = k1(i,j,0)
+                ky = k2(i,j,0)
+                kk=dsqrt(kx**2+ky**2)
+                !
+                if((kk - dk)<forcek .and. (kk + dk)>forcek) then
+                    random_angle = (kx*thetax + ky*thetay)/kk
+                    force1(i,j,1) = kx/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
+                    force2(i,j,1) = ky/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
+                else
+                    force1(i,j,1) = 0.d0
+                    force2(i,j,1) = 0.d0
+                endif
+            end do
+            end do
+            !
+            call ifft2d(force1)
+            call ifft2d(force2)
+            !
+            E = 0.d0
+            energy = 0.d0
+            Fen = 0.d0
+            do j=1,jm
+            do i=1,im
+                E = E + dreal(force1(i,j,1)) * u1(i,j,0) + dreal(force2(i,j,1))* u2(i,j,0)
+                energy = energy + (u1(i,j,0)**2 + u2(i,j,0)**2)
+                Fen = Fen + dreal(force1(i,j,1))**2 + dreal(force2(i,j,1))**2  
+            end do
+            end do
+            E = psum(E)/(ia*ja)
+            energy = psum(energy)/(ia*ja)
+            Fen = psum(Fen)/(ia*ja)
+            factor = (dsqrt((target_energy - energy) * Fen + E**2) - E)/Fen
+            !
+            do j=1,jm
+            do i=1,im
+                u1(i,j,0) = u1(i,j,0) + factor * dreal(force1(i,j,1))
+                u2(i,j,0) = u2(i,j,0) + factor * dreal(force2(i,j,1))
+            end do
+            end do
+            !
+            if (lio) then
+                call listwrite(hand_fo,factor,E,energy,Fen)
+            endif
         endif
     end subroutine forcing2D
     !
     subroutine forcing3D(hand_fo)
+        ! TODO: check compilation, submit & test 3D forcing
         use utility, only: listwrite
         implicit none
         !
         integer, intent(in) :: hand_fo
         integer :: i,j,k
         real(8) :: energy, factor
-        integer :: forcek
         real(8) :: kk,dk,E
+        real(8) :: Fen,thetax,thetay,thetaz,kx,ky,kz,random_angle
         !
         if(forcemethod == 1)then
             ! Linear forcing with f_i = (factor-1) * u_i
@@ -366,7 +424,6 @@ module solution
             !
         elseif(forcemethod == 2) then
             ! Linear forcing in a band of wave numbers in spectral space
-            forcek = 5
             dk = 0.5d0
             !
             do k=1,km
@@ -430,7 +487,79 @@ module solution
                 call listwrite(hand_fo,factor,E)
             endif
             !
-        endif
+        elseif(forcemethod == 3) then
+            ! Random forcing in a band of wave numbers in spectral space
+            dk = 0.5d0
+            !
+            !
+            if(mpirank==0)then
+                call random_number(thetax)
+                call random_number(thetay)
+                call random_number(thetaz)
+            endif
+            !
+            call bcast(thetax)
+            call bcast(thetay)
+            call bcast(thetaz)
+            !
+            do k=1,km
+            do j=1,jm
+            do i=1,im
+                kx = k1(i,j,k)
+                ky = k2(i,j,k)
+                kz = k3(i,j,k) 
+                kk=dsqrt(kx**2+ky**2+kz**2)
+                !
+                if((kk - dk)<forcek .and. (kk + dk)>forcek) then
+                    random_angle = (kx*thetax + ky*thetay + kz*thetaz)/kk
+                    force1(i,j,k) = kx/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
+                    force2(i,j,k) = ky/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
+                    force3(i,j,k) = kz/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
+                else
+                    force1(i,j,k) = 0.d0
+                    force2(i,j,k) = 0.d0
+                    force3(i,j,k) = 0.d0
+                endif
+            end do
+            end do
+            end do
+            !
+            call ifft3d(force1)
+            call ifft3d(force2)
+            call ifft3d(force3)
+            !
+            E = 0.d0
+            energy = 0.d0
+            Fen = 0.d0
+            do k=1,km
+            do j=1,jm
+            do i=1,im
+                E = E + dreal(force1(i,j,k)) * u1(i,j,k) + dreal(force2(i,j,k)) * u2(i,j,k) + &
+                dreal(force3(i,j,k)) * u3(i,j,k)
+                energy = energy + (u1(i,j,k)**2 + u2(i,j,k)**2 + u3(i,j,k)**2)
+                Fen = Fen + dreal(force1(i,j,k))**2 + dreal(force2(i,j,k))**2 + dreal(force3(i,j,k))**2
+            end do
+            end do
+            end do
+            E = psum(E)/(ia*ja*ka)
+            energy = psum(energy)/(ia*ja*ka)
+            Fen = psum(Fen)/(ia*ja*ka)
+            factor = (dsqrt((target_energy - energy) * Fen + E**2) - E)/Fen
+            !
+            do k=1,km
+            do j=1,jm
+            do i=1,im
+                u1(i,j,k) = u1(i,j,k) + factor * dreal(force1(i,j,k))
+                u2(i,j,k) = u2(i,j,k) + factor * dreal(force2(i,j,k))
+                u3(i,j,k) = u3(i,j,k) + factor * dreal(force3(i,j,k))
+            end do
+            end do
+            end do
+            !
+            if (lio) then
+                call listwrite(hand_fo,factor,E,energy,Fen)
+            endif
+        endif ! TODO: implement forcemethod3
     end subroutine forcing3D
     !
     subroutine compute_ut2D(u1t, u2t)

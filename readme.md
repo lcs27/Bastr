@@ -39,12 +39,24 @@ List of parameters:
 
 ## Dependencies
 This code requires a dependency on
-- mpi ([mpich](https://www.mpich.org/) or [openmpi](https://www.open-mpi.org/) is ok!)
+- mpi (e.g. [mpich](https://www.mpich.org/) or [openmpi](https://www.open-mpi.org/) or any thing you like)
 - [hdf5](https://www.hdfgroup.org/download-hdf5/)
+A guide for hdf5 installation:
+```
+tar -zxvf hdf5-1.14.4-3.tar.gz # Or other files
+cd hdf5-1.14.4-3/
+module purge
+module load compiler/devtoolset/7.3.1
+module load mpi/hpcx/2.7.4/gcc-7.3.1
+module load compiler/intel/2020.1.217
+./configure --enable-parallel --enable-fortran CC=mpicc CXX=mpic++ FC=mpif90 F90=mpif90 --enable-build-mode=production --enable-build-mode=debug --enable-shared
+
+make
+make check
+make install
+```
 - [fftw](https://www.fftw.org/)
 
 ## Installation procedure
-If your computer is already equipped with ASTR code? - Feel free! Just run make and you can compile the Bastr code.
-
-If you begin from zero:
-*TODO*
+1. Equip your computer with above libraries (If your computer is already equipped with ASTR code? - Feel free! It is also adapted for Bastr)
+2. Just run `make` and you can compile the Bastr code.

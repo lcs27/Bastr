@@ -55,7 +55,7 @@ module commvar
   !
   logical :: lprojectd
   real(8) :: target_energy
-  integer :: forcemethod
+  integer :: forcemethod, forcek
   !
   contains
   !

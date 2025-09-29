@@ -39,7 +39,7 @@ module readwrite
       read(fh,'(/)')
       read(fh,*)maxstep,deltat,lwsequ,feqwsequ,lwspectra,feqwspe,kmax
       read(fh,'(/)')
-      read(fh,*)forcemethod, target_energy, lprojectd
+      read(fh,*)forcemethod, forcek, target_energy, lprojectd
       print *,' << ',trim(inputfile),' ... done'
       !
       print *, 'ia:', ia, 'ja:', ja, 'ka:', ka
@@ -60,6 +60,7 @@ module readwrite
     call bcast(target_energy)
     call bcast(lprojectd)
     call bcast(kmax)
+    call bcast(forcek)
     !
     if(ka == 0) then
       if(ja == 0 ) then
@@ -67,11 +68,11 @@ module readwrite
         error stop '1D case is not implemented yet!'
       else
         ndims = 2
-        allkmax = ceiling(real(sqrt(2.d0)/3*min(ia,ja)))
+        allkmax = int(ia / 3)
       endif
     else
       ndims = 3
-      allkmax = ceiling(real(sqrt(2.d0)/3*min(ia,ja,ka)))
+      allkmax = int(ia / 3)
     endif
     !
     !
@@ -89,7 +90,9 @@ module readwrite
       print *, 'feqwsequ=', feqwsequ
       print *, 'lwspectra=', lwspectra
       print *, 'feqwspe=', feqwspe
+      print *, 'kmax=', allkmax
       print *, 'forcemethod=', forcemethod
+      print *, 'forcek=', forcek
       print *, 'target_energy=', target_energy
       print *, 'lprojectd=', lprojectd
     endif

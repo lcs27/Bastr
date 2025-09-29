@@ -210,7 +210,7 @@ module tool
         use commvar, only : k1, k2
         implicit none
         complex(8), dimension(:,:,:), intent(inout) :: u1spe, u2spe
-        complex(8) :: usspe
+        complex(8) :: usspe, udspe
         integer :: i, j
         real(8) :: kk
         !

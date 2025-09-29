@@ -11,12 +11,6 @@ OBJDIR = obj
 BINDIR = bin
 CTRDIR = cma
 
-ifeq ($(USER),lthpc)
-    export FFTW_INC_DIR=/usr/include
-	export FFTW_LIB_DIR=/usr/lib/x86_64-linux-gnu
-endif
-
-
 
 FCFLAGS= -O3 -fbounds-check -I$(FFTW_INC_DIR) -lfftw3
 
@@ -27,7 +21,7 @@ OPTIONS3 = -DHDF5
 # OMP = -fopenacc
 
 
-EXE=Bastr2d
+EXE=Bastr
 EXE_PP=Bastrpp
 
 LIBS= -lz -lm -L$(FFTW_LIB_DIR) -lfftw3_mpi -lfftw3# -L$(CTRDIR)/lib -lcantera_fortran -lcantera -lstdc++ -pthread 
