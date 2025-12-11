@@ -32,7 +32,7 @@ TARGET_PP = $(BINDIR)/$(EXE_PP)
 
 VPATH = $(SRCDIR):$(OBJDIR)
 
-srs= commtype.F90 constdef.F90 commvar.F90 strings.F90 stlaio.F90 utility.F90 \
+srs= cmdefne.F90 commtype.F90 constdef.F90 commvar.F90 strings.F90 stlaio.F90 utility.F90 \
 	tool.F90 parallel.F90 fftwlink.F90 hdf5io.F90 readwrite.F90 solution.F90\
 	Bastr.F90 Bastrpp.F90
       
@@ -44,6 +44,10 @@ OBJS_PP=$(filter-out Bastr.o,$(srs:.F90=.o))
 	$(FC) $(FCFLAGS) $(INCL) $(OPTIONS1) $(OPTIONS2) $(OPTIONS3) $(OPTIONS4) $(OMP) -c -o $(OBJDIR)/$@  $<
 
 default: $(TARGET) $(TARGET_PP)
+
+run: $(TARGET)
+
+pp: $(TARGET_PP)
 
 $(TARGET) : $(OBJS)
 	@mkdir -p $(BINDIR)

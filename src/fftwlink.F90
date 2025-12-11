@@ -463,6 +463,7 @@ module fftwlink
     subroutine deallocation
         !
         use commvar
+        use parallel, only: mpistop
         include 'fftw3-mpi.f03'
         !
         deallocate(Es, Ed, kn,Ecount)
@@ -477,6 +478,8 @@ module fftwlink
         case(2)
             call deallocation2D
         end select
+        !
+        call mpistop
         !
     end subroutine deallocation
     !
