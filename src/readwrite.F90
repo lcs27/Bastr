@@ -40,6 +40,8 @@ module readwrite
       read(fh,*)maxstep,deltat,lwsequ,feqwsequ,lwspectra,feqwspe,kmax
       read(fh,'(/)')
       read(fh,*)forcemethod, forcek, target_energy, lprojectd
+      read(fh,'(/)')
+      read(fh,*)initialmethod
       print *,' << ',trim(inputfile),' ... done'
       !
       print *, 'ia:', ia, 'ja:', ja, 'ka:', ka
@@ -61,6 +63,7 @@ module readwrite
     call bcast(lprojectd)
     call bcast(kmax)
     call bcast(forcek)
+    call bcast(initialmethod)
     !
     if(ka == 0) then
       if(ja == 0 ) then
@@ -95,6 +98,7 @@ module readwrite
       print *, 'forcek=', forcek
       print *, 'target_energy=', target_energy
       print *, 'lprojectd=', lprojectd
+      print *, 'initialmethod=', initialmethod
     endif
     !
   end subroutine
@@ -117,18 +121,24 @@ module readwrite
     character(len=256) :: infilename      ! Name of the input HDF5 file
     integer :: ierr                      ! Error code for MPI operations
     character(len=1) :: modeio           ! Mode for HDF5 read operations
-    ! read initial field
-    modeio ='h'
-    infilename='datin/flowini2d.h5'
-    !
-    ! Initial field read
-    !
-    call h5io_init(filename=infilename,mode='read')
-    call h5read(varname='u1', var=u1(1:im,1:jm,0:km),mode = modeio)
-    call h5read(varname='u2', var=u2(1:im,1:jm,0:km),mode = modeio)
-    call h5io_end
-    call mpi_barrier(mpi_comm_world,ierr)
-    if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
+    if(initialmethod==0)then
+      u1=0.d0
+      u2=0.d0
+      if(mpirank==0) print *, ' give void initial velocity field ... done'
+    elseif(initialmethod==1)then
+      ! read initial field
+      modeio ='h'
+      infilename='datin/flowini2d.h5'
+      !
+      ! Initial field read
+      !
+      call h5io_init(filename=infilename,mode='read')
+      call h5read(varname='u1', var=u1(1:im,1:jm,0:km),mode = modeio)
+      call h5read(varname='u2', var=u2(1:im,1:jm,0:km),mode = modeio)
+      call h5io_end
+      call mpi_barrier(mpi_comm_world,ierr)
+      if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
+    endif
   !
   end subroutine read_initial_field2D
   !
@@ -137,19 +147,25 @@ module readwrite
     character(len=256) :: infilename      ! Name of the input HDF5 file
     integer :: ierr                      ! Error code for MPI operations
     character(len=1) :: modeio           ! Mode for HDF5 read operations
-    ! read initial field
-    modeio ='h'
-    infilename='datin/flowini3d.h5'
-    !
-    ! Initial field read
-    !
-    call h5io_init(filename=infilename,mode='read')
-    call h5read(varname='u1', var=u1(1:im,1:jm,1:km),mode = modeio)
-    call h5read(varname='u2', var=u2(1:im,1:jm,1:km),mode = modeio)
-    call h5read(varname='u3', var=u3(1:im,1:jm,1:km),mode = modeio)
-    call h5io_end
-    call mpi_barrier(mpi_comm_world,ierr)
-    if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
+    if(initialmethod==0)then
+      u1=0.d0
+      u2=0.d0
+      if(mpirank==0) print *, ' give void initial velocity field ... done'
+    elseif(initialmethod==1)then
+      ! read initial field
+      modeio ='h'
+      infilename='datin/flowini3d.h5'
+      !
+      ! Initial field read
+      !
+      call h5io_init(filename=infilename,mode='read')
+      call h5read(varname='u1', var=u1(1:im,1:jm,1:km),mode = modeio)
+      call h5read(varname='u2', var=u2(1:im,1:jm,1:km),mode = modeio)
+      call h5read(varname='u3', var=u3(1:im,1:jm,1:km),mode = modeio)
+      call h5io_end
+      call mpi_barrier(mpi_comm_world,ierr)
+      if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
+    endif
   !
   end subroutine read_initial_field3D
   !

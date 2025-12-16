@@ -63,6 +63,10 @@ program Bastrpp
     endif
     call bcast(thefilenumb) 
     call spectra2d(thefilenumb)
+  elseif(trim(cmd)=='hitgen2d')then
+    call create_initial_field_2d
+  else
+    if(mpirank==0) print *, ' Unknown pp command!'
   endif
   !
   call deallocation
@@ -391,6 +395,122 @@ subroutine spectra2d(thefilenumb)
   endif
   !
 end subroutine spectra2d
+!
+subroutine create_initial_field_2d
+  use hdf5io
+  use commvar
+  use parallel,  only : mpirank,bcast
+  use solution
+  use random, only:h
+  !
+  implicit none
+  character(len=128) :: infilename
+  real(8), parameter :: PI = 3.14159265358979323846d0
+  integer :: hand_f, i,j
+  integer :: time_values(8),seed(8)
+  real(8) :: var1,var2
+  real(8) :: rand1,rand2
+  real(8) :: kx,ky,kk,energy,factor
+  real(8), allocatable :: random_angle(:,:,:)
+  !
+  call quantity_prepare
+  !
+  allocate(random_angle(1:im,1:jm,0:km))
+  !
+  do j=1,jm
+  do i=1,im
+  u1spe(i,j,1)=CMPLX(0.d0,0.d0,C_INTPTR_T);
+  u2spe(i,j,1)=CMPLX(0.d0,0.d0,C_INTPTR_T);
+  end do
+  end do
+  !
+  call date_and_time(values=time_values)
+  !
+  do i = 1, 8
+      seed(i) = time_values(1) * 10000000 + &   ! 年
+              time_values(2) * 100000 + &     ! 月
+              time_values(3) * 1000 + &       ! 日
+              ABS(time_values(4)) * 100 + &   ! 时差
+              time_values(5) * 6000000 + &    ! 时
+              time_values(6) * 60000 + &      ! 分
+              time_values(7) * 600 + &        ! 秒
+              time_values(8) * 60  ! 毫秒
+      seed(i) = seed(i) + i * 314159
+      !
+      if (seed(i) < 0) seed(i) = -seed(i)
+      !
+      seed(i) = mod(seed(i), 1000000000)
+  end do
+  call random_seed(put=seed)
+  !
+  if(lio)then
+      call random_number(rand1)
+      call random_number(rand2)
+  endif
+  call bcast(rand1)
+  call bcast(rand2)
+  if(lio) then
+      print *, ' Random seeds:', rand1, rand2
+  endif
+  !
+  do j=1,jm
+  do i=1,im
+    kx = k1(i,j,0)
+    ky = k2(i,j,0)
+    kk=dsqrt(kx**2+ky**2)
+    if(kx==0 .and. ky==0) then
+      u1spe(i,j,1)=0.d0
+      u2spe(i,j,1)=0.d0
+    else
+      ! ran1: random number distributied in (0,1)
+      !
+      var1=kk**4*exp(-2.d0*(kk/forcek)**2)
+      var2=sqrt(var1/2.d0/PI/kk)
+      !
+      random_angle(i,j,0) =  h(kx,ky,rand1,rand2) * PI
+      u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+      u2spe(i,j,1) = var2*ky/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+    end if
+  enddo
+  enddo
+  !
+  call ifft2d(u1spe)
+  call ifft2d(u2spe)
+  !
+  do j=1,jm
+  do i=1,im
+      u1(i,j,0) = dreal(u1spe(i,j,1))
+      u2(i,j,0) = dreal(u2spe(i,j,1))
+  end do
+  end do
+  !
+  energy = 0.d0
+  do j=1,jm
+  do i=1,im
+      energy = energy + (u1(i,j,0)**2 + u2(i,j,0)**2)
+  end do
+  end do
+  energy = psum(energy)/(ia*ja)
+  factor = dsqrt(target_energy/energy)
+  ! scale the field to the target energy
+  do j=1,jm
+  do i=1,im
+      u1(i,j,0) = u1(i,j,0) * factor
+      u2(i,j,0) = u2(i,j,0) * factor
+  end do
+  end do
+  !
+  infilename='datin/flowini2d.h5'
+  !
+  call h5io_init(trim(infilename),mode='write')
+  call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode='h')
+  call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode='h')
+  call h5write(varname='random_angle',var=random_angle(1:im,1:jm,0:km),mode='h')
+  call h5io_end
+  !
+  if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
+  !
+end subroutine create_initial_field_2d
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! End of the pp program
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

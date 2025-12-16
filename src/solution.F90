@@ -57,17 +57,19 @@ module solution
             if(mpirank==0)  print *, "nstep, Es, Ed, Eall= ", nstep, Esspe, Edspe, &
                                 Esspe+Edspe
             !
-            if(lwsequ .and. nstep==nxtwsequ) then
-            !
-            call writeflfed
-            !
-            filenumb = filenumb + 1
-            !
-            nxtwsequ = min(nxtwsequ + feqwsequ, maxstep)
-            !
-            if(mpirank==0)  print *, "Next print is ", nxtwsequ
-            !
+            if((lwsequ .and. nstep==nxtwsequ) .or. isnan(Esspe+Edspe)) then
+                !
+                call writeflfed
+                !
+                filenumb = filenumb + 1
+                !
+                nxtwsequ = min(nxtwsequ + feqwsequ, maxstep)
+                !
+                if(mpirank==0)  print *, "Next print is ", nxtwsequ
+                !
             endif
+            !
+            if(isnan(Esspe+Edspe)) stop '"E" is a NaN'
             !
             nstep = nstep + 1 
             time = time + deltat
@@ -107,17 +109,18 @@ module solution
             !
             if(mpirank==0)  print *, "nstep, Es, Ed, Eall= ", nstep, Esspe, Edspe, &
                                 Esspe+Edspe
+            if(isnan(Esspe+Edspe)) stop '"E" is a NaN'
             !
             if(lwsequ .and. nstep==nxtwsequ) then
-            !
-            call writeflfed
-            !
-            filenumb = filenumb + 1
-            !
-            nxtwsequ = min(nxtwsequ + feqwsequ, maxstep)
-            !
-            if(mpirank==0)  print *, "Next print is ", nxtwsequ
-            !
+                !
+                call writeflfed
+                !
+                filenumb = filenumb + 1
+                !
+                nxtwsequ = min(nxtwsequ + feqwsequ, maxstep)
+                !
+                if(mpirank==0)  print *, "Next print is ", nxtwsequ
+                !
             endif
             !
             nstep = nstep + 1 
@@ -236,13 +239,15 @@ module solution
     !
     subroutine forcing2D(hand_fo)
         use utility, only: listwrite
+        use random, only:h
         implicit none
         !
         integer, intent(in) :: hand_fo
+        real(8), parameter :: PI = 3.14159265358979323846d0
         integer :: i,j
         real(8) :: energy, factor
         real(8) :: kk,dk,E
-        real(8) :: Fen,thetax, thetay, kx, ky, random_angle
+        real(8) :: Fen, kx, ky, rand1, rand2, random_angle
         !
         if(forcemethod == 1)then
             ! Linear forcing with f_i = (factor-1) * u_i
@@ -325,13 +330,12 @@ module solution
             dk = 0.5d0
             !
             !
-            if(mpirank==0)then
-                call random_number(thetax)
-                call random_number(thetay)
+            if(lio)then
+                call random_number(rand1)
+                call random_number(rand2)
             endif
-            !
-            call bcast(thetax)
-            call bcast(thetay)
+            call bcast(rand1)
+            call bcast(rand2)
             !
             do j=1,jm
             do i=1,im
@@ -340,7 +344,7 @@ module solution
                 kk=dsqrt(kx**2+ky**2)
                 !
                 if((kk - dk)<forcek .and. (kk + dk)>forcek) then
-                    random_angle = (kx*thetax + ky*thetay)/kk
+                    random_angle =  h(kx,ky,rand1,rand2) * PI
                     force1(i,j,1) = kx/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
                     force2(i,j,1) = ky/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
                 else
@@ -366,7 +370,11 @@ module solution
             E = psum(E)/(ia*ja)
             energy = psum(energy)/(ia*ja)
             Fen = psum(Fen)/(ia*ja)
-            factor = (dsqrt((target_energy - energy) * Fen + E**2) - E)/Fen
+            if(target_energy > energy) then
+                factor = (dsqrt((target_energy - energy) * Fen + E**2) - E)/Fen
+            else
+                factor = 0.d0
+            endif
             !
             do j=1,jm
             do i=1,im
@@ -376,8 +384,65 @@ module solution
             end do
             !
             if (lio) then
-                call listwrite(hand_fo,factor,E,energy,Fen)
+                call listwrite(hand_fo,factor,E,energy,Fen,rand1,rand2)
             endif
+        elseif(forcemethod == 4) then
+            ! Linear forcing in a band of wave numbers in spectral space
+            dk = 0.5d0
+            !
+            if(lio)then
+                call random_number(rand1)
+                call random_number(rand2)
+            endif
+            call bcast(rand1)
+            call bcast(rand2)
+            !
+            do j=1,jm
+            do i=1,im
+                kx = k1(i,j,0)
+                ky = k2(i,j,0)
+                kk=dsqrt(kx**2+ky**2)
+                !
+                if((kk - dk)<forcek .and. (kk + dk)>forcek) then
+                    random_angle =  h(kx,ky,rand1,rand2) * PI
+                    force1(i,j,1) = kx/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
+                    force2(i,j,1) = ky/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
+                else
+                    force1(i,j,1) = 0.d0
+                    force2(i,j,1) = 0.d0
+                endif
+            end do
+            end do
+            !
+            call ifft2d(force1)
+            call ifft2d(force2)
+            !
+            E = 0.d0
+            energy = 0.d0
+            Fen = 0.d0
+            do j=1,jm
+            do i=1,im
+                E = E + dreal(force1(i,j,1)) * u1(i,j,0) + dreal(force2(i,j,1))* u2(i,j,0)
+                energy = energy + (u1(i,j,0)**2 + u2(i,j,0)**2)
+                Fen = Fen + dreal(force1(i,j,1))**2 + dreal(force2(i,j,1))**2
+            end do
+            end do
+            E = psum(E)/(ia*ja)
+            energy = psum(energy)/(ia*ja)
+            Fen = psum(Fen)/(ia*ja)
+            factor = target_energy
+            !
+            do j=1,jm
+            do i=1,im
+                u1(i,j,0) = u1(i,j,0) + factor * dreal(force1(i,j,1))
+                u2(i,j,0) = u2(i,j,0) + factor * dreal(force2(i,j,1))
+            end do
+            end do
+            !
+            if (lio) then
+                call listwrite(hand_fo,factor,E,energy,Fen,rand1,rand2)
+            endif
+            !
         endif
     end subroutine forcing2D
     !
@@ -698,7 +763,7 @@ module solution
         !
         integer :: i, j, kOrdinal
         real(8) :: kk, dk
-        real(8) :: k2Edspe, kdEdspe, k2dEdspe
+        real(8) :: k2Edspe, kMEdspe
         complex(8) :: u1s,u2s,u1d,u2d
         complex(8) ::  usspe,udspe
         !
@@ -710,8 +775,7 @@ module solution
         Edspe = 0.d0
         Esspe = 0.d0
         k2Edspe = 0.d0
-        kdEdspe = 0.d0
-        k2dEdspe = 0.d0
+        kMEdspe = 0.d0
         !
         do j=1,jm
         do i=1,im
@@ -723,6 +787,7 @@ module solution
                 u2d =  udspe*k2(i,j,0)/kk
                 u1s =  usspe*k2(i,j,0)/kk 
                 u2s = -usspe*k1(i,j,0)/kk
+                kMEdspe = kMEdspe + (udspe*dconjg(udspe))/2 / kk
             else
                 usspe = 0
                 udspe = 0
@@ -736,16 +801,14 @@ module solution
             !
             if(kOrdinal <= allkmax)then
                 Ecount(kOrdinal) = Ecount(kOrdinal) + 1
-                Es(kOrdinal) = Es(kOrdinal) + usspe*conjg(usspe)*kk/2
-                Ed(kOrdinal) = Ed(kOrdinal) + udspe*conjg(udspe)*kk/2
+                Es(kOrdinal) = Es(kOrdinal) + usspe*conjg(usspe)/2
+                Ed(kOrdinal) = Ed(kOrdinal) + udspe*conjg(udspe)/2
                 kn(kOrdinal) = kn(kOrdinal) + kk
             endif
             !
             Edspe = Edspe + (udspe*dconjg(udspe))/2
             Esspe = Esspe + (usspe*dconjg(usspe))/2
             k2Edspe = k2Edspe + (udspe*dconjg(udspe))/2 * (kk ** 2)
-            kdEdspe = kdEdspe + (udspe*dconjg(udspe))/2 * (kk ** 0.5)
-            k2dEdspe = k2dEdspe + (udspe*dconjg(udspe))/2 * (kk ** 2.5)
             !
         end do
         end do
@@ -753,18 +816,17 @@ module solution
         !
         do i=1,allkmax
             Ecount(i) = psum(Ecount(i))
-            Es(i) = psum(Es(i))/Ecount(i)
-            Ed(i) = psum(Ed(i))/Ecount(i)
+            Es(i) = psum(Es(i))
+            Ed(i) = psum(Ed(i))
             kn(i) =  psum(kn(i))/Ecount(i)
         enddo
         Edspe = psum(Edspe)
         Esspe = psum(Esspe)
         k2Edspe = psum(k2Edspe)
-        kdEdspe = psum(kdEdspe)
-        k2dEdspe = psum(k2dEdspe)
+        kMEdspe = psum(kMEdspe)
         !
         if(lio) then
-            call listwrite(hand_f,Esspe,Edspe,k2Edspe,kdEdspe,k2dEdspe)
+            call listwrite(hand_f,Esspe,Edspe,k2Edspe,kMEdspe)
             if(lwspectra .and. nstep==nxtwspe) then
                 !
                 do i=1,allkmax
@@ -789,7 +851,7 @@ module solution
         !
         integer :: i, j, k, kOrdinal
         real(8) :: kk, dk
-        real(8) :: k2Edspe, kdEdspe, k2dEdspe
+        real(8) :: k2Edspe, kMEdspe
         complex(8) :: u1s,u2s,u3s,u1d,u2d,u3d
         complex(8) ::  udspe
         !
@@ -801,8 +863,7 @@ module solution
         Edspe = 0.d0
         Esspe = 0.d0
         k2Edspe = 0.d0
-        kdEdspe = 0.d0
-        k2dEdspe = 0.d0
+        kMEdspe = 0.d0
         !
         do k=1,km
         do j=1,jm
@@ -816,6 +877,7 @@ module solution
                 u1s =  u1spe(i,j,k) - u1d
                 u2s =  u2spe(i,j,k) - u2d
                 u3s =  u3spe(i,j,k) - u3d
+                kMEdspe = kMEdspe + (udspe*dconjg(udspe))/2 / kk
             else
                 udspe = 0
                 u1d = 0
@@ -830,16 +892,14 @@ module solution
             !
             if(kOrdinal <= allkmax)then
                 Ecount(kOrdinal) = Ecount(kOrdinal) + 1
-                Es(kOrdinal) = Es(kOrdinal) + u1s*conjg(u1s)*kk/2 + u2s*conjg(u2s)*kk/2 + u3s*conjg(u3s)*kk/2
-                Ed(kOrdinal) = Ed(kOrdinal) + udspe*conjg(udspe)*kk/2
+                Es(kOrdinal) = Es(kOrdinal) + u1s*conjg(u1s)/2 + u2s*conjg(u2s)/2 + u3s*conjg(u3s)/2
+                Ed(kOrdinal) = Ed(kOrdinal) + udspe*conjg(udspe)/2
                 kn(kOrdinal) = kn(kOrdinal) + kk
             endif
             !
             Edspe = Edspe + (udspe*dconjg(udspe))/2
             Esspe = Esspe + u1s*conjg(u1s)/2 + u2s*conjg(u2s)/2 + u3s*conjg(u3s)/2
             k2Edspe = k2Edspe + (udspe*dconjg(udspe))/2 * (kk ** 2)
-            kdEdspe = kdEdspe + (udspe*dconjg(udspe))/2 * (kk ** 0.5)
-            k2dEdspe = k2dEdspe + (udspe*dconjg(udspe))/2 * (kk ** 2.5)
             !
         end do
         end do
@@ -848,19 +908,18 @@ module solution
         !
         do i=1,allkmax
             Ecount(i) = psum(Ecount(i))
-            Es(i) = psum(Es(i))/Ecount(i)
-            Ed(i) = psum(Ed(i))/Ecount(i)
+            Es(i) = psum(Es(i))
+            Ed(i) = psum(Ed(i))
             kn(i) =  psum(kn(i))/Ecount(i)
         enddo
         Edspe = psum(Edspe)
         Esspe = psum(Esspe)
         k2Edspe = psum(k2Edspe)
-        kdEdspe = psum(kdEdspe)
-        k2dEdspe = psum(k2dEdspe)
+        kMEdspe = psum(kMEdspe)
         !
         if(lio) then
-            call listwrite(hand_f,Esspe,Edspe,k2Edspe,kdEdspe,k2dEdspe)
-            if(lwspectra .and. nstep==nxtwspe) then
+            call listwrite(hand_f,Esspe,Edspe,k2Edspe,kMEdspe)
+            if((lwspectra .and. nstep==nxtwspe) .or. isnan(Esspe+Edspe)) then
                 !
                 do i=1,allkmax
                     call listwrite(hand_g,kn(i),Es(i),Ed(i))

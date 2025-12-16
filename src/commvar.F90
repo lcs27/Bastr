@@ -57,6 +57,8 @@ module commvar
   real(8) :: target_energy
   integer :: forcemethod, forcek
   !
+  integer :: initialmethod
+  !
   contains
   !
 end module commvar
