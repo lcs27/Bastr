@@ -60,6 +60,8 @@ module commvar
   !
   integer :: initialmethod
   !
+  integer :: timemethod
+  !
   contains
   !
 end module commvar

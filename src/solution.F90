@@ -38,14 +38,23 @@ module solution
         integer :: i,j
         integer, intent(in) :: hand_f, hand_g, hand_a, hand_fo
         !
+        u1spe(:,:,1) = CMPLX(u1(:,:,0), 0.0d0,C_INTPTR_T);
+        u2spe(:,:,1) = CMPLX(u2(:,:,0), 0.0d0, C_INTPTR_T);
+        !
+        call fft2d(u1spe)
+        call fft2d(u2spe)
+        call dealiasing(u1spe)
+        call dealiasing(u2spe)
+        call ifft2d(u1spe)
+        call ifft2d(u2spe)
+        !
+        u1(:,:,0) = dreal(u1spe(:,:,1))
+        u2(:,:,0) = dreal(u2spe(:,:,1))
+        !
         do while(nstep<=maxstep)
             !
-            do j=1,jm
-            do i=1,im
-            u1spe(i,j,1)=CMPLX(u1(i,j,0),0.d0,C_INTPTR_T);
-            u2spe(i,j,1)=CMPLX(u2(i,j,0),0.d0,C_INTPTR_T);
-            end do
-            end do
+            u1spe(:,:,1) = CMPLX(u1(:,:,0), 0.0d0,C_INTPTR_T);
+            u2spe(:,:,1) = CMPLX(u2(:,:,0), 0.0d0, C_INTPTR_T);
             !
             call fft2d(u1spe)
             call fft2d(u2spe)
@@ -95,15 +104,9 @@ module solution
         !
         do while(nstep<=maxstep)
             !
-            do k=1,km
-            do j=1,jm
-            do i=1,im
-            u1spe(i,j,k)=CMPLX(u1(i,j,k),0.d0,C_INTPTR_T);
-            u2spe(i,j,k)=CMPLX(u2(i,j,k),0.d0,C_INTPTR_T);
-            u3spe(i,j,k)=CMPLX(u3(i,j,k),0.d0,C_INTPTR_T);
-            end do
-            end do
-            end do
+            u1spe(:,:,:) = CMPLX(u1(:,:,:), 0.0d0,C_INTPTR_T);
+            u2spe(:,:,:) = CMPLX(u2(:,:,:), 0.d0, C_INTPTR_T);
+            u3spe(:,:,:) = CMPLX(u3(:,:,:), 0.d0, C_INTPTR_T);
             !
             call fft3d(u1spe)
             call fft3d(u2spe)
@@ -151,36 +154,24 @@ module solution
         call compute_ut(u1tA, u2tA)
         !
         ! Step 2
-        do j=1,jm
-        do i=1,im
-            u1spe(i,j,1)=CMPLX(u1(i,j,0) + deltat * dreal(u1tA(i,j,1)) / 2.d0 ,0.d0,C_INTPTR_T);
-            u2spe(i,j,1)=CMPLX(u2(i,j,0) + deltat * dreal(u2tA(i,j,1)) / 2.d0 ,0.d0,C_INTPTR_T);
-        end do
-        end do
+        u1spe(:,:,1)=CMPLX(u1(:,:,0) + deltat * dreal(u1tA(:,:,1)) / 2.d0 ,0.d0,C_INTPTR_T);
+        u2spe(:,:,1)=CMPLX(u2(:,:,0) + deltat * dreal(u2tA(:,:,1)) / 2.d0 ,0.d0,C_INTPTR_T);
         call fft2d(u1spe)
         call fft2d(u2spe)
         !
         call compute_ut(u1tB, u2tB)
         !
         ! Step 3
-        do j=1,jm
-        do i=1,im
-            u1spe(i,j,1) = CMPLX(u1(i,j,0) - deltat * dreal(u1tA(i,j,1)) + 2.d0*deltat * dreal(u1tB(i,j,1)), 0.d0, C_INTPTR_T)
-            u2spe(i,j,1) = CMPLX(u2(i,j,0) - deltat * dreal(u2tA(i,j,1)) + 2.d0*deltat * dreal(u2tB(i,j,1)), 0.d0, C_INTPTR_T)
-        end do
-        end do
+        u1spe(:,:,1) = CMPLX(u1(:,:,0) - deltat * dreal(u1tA(:,:,1)) + 2.d0*deltat * dreal(u1tB(:,:,1)), 0.d0, C_INTPTR_T)
+        u2spe(:,:,1) = CMPLX(u2(:,:,0) - deltat * dreal(u2tA(:,:,1)) + 2.d0*deltat * dreal(u2tB(:,:,1)), 0.d0, C_INTPTR_T)
         call fft2d(u1spe)
         call fft2d(u2spe)
         !
         call compute_ut(u1tC, u2tC)
         !
         ! Final update
-        do j=1,jm
-        do i=1,im
-            u1(i,j,0) = u1(i,j,0) + deltat * (dreal(u1tA(i,j,1)) + 4.d0 * dreal(u1tB(i,j,1)) + dreal(u1tC(i,j,1))) / 6.d0
-            u2(i,j,0) = u2(i,j,0) + deltat * (dreal(u2tA(i,j,1)) + 4.d0 * dreal(u2tB(i,j,1)) + dreal(u2tC(i,j,1))) / 6.d0
-        end do
-        end do
+        u1(:,:,0) = u1(:,:,0) + deltat * (dreal(u1tA(:,:,1)) + 4.d0 * dreal(u1tB(:,:,1)) + dreal(u1tC(:,:,1))) / 6.d0
+        u2(:,:,0) = u2(:,:,0) + deltat * (dreal(u2tA(:,:,1)) + 4.d0 * dreal(u2tB(:,:,1)) + dreal(u2tC(:,:,1))) / 6.d0
         !
         !
     end subroutine RK32D
@@ -216,7 +207,6 @@ module solution
     subroutine RK33D
         !
         implicit none
-        integer :: i,j,k
         ! Warning : The entrance of RK3 must be a Fourier-Transformed u1spe and u2spe
         ! Step 1
         ! 
@@ -224,15 +214,9 @@ module solution
         call compute_ut(u1tA, u2tA, u3tA)
         !
         ! Step 2
-        do k=1,km
-        do j=1,jm
-        do i=1,im
-            u1spe(i,j,k)=CMPLX(u1(i,j,k) + deltat * dreal(u1tA(i,j,k)) / 2.d0 ,0.d0,C_INTPTR_T);
-            u2spe(i,j,k)=CMPLX(u2(i,j,k) + deltat * dreal(u2tA(i,j,k)) / 2.d0 ,0.d0,C_INTPTR_T);
-            u3spe(i,j,k)=CMPLX(u3(i,j,k) + deltat * dreal(u3tA(i,j,k)) / 2.d0 ,0.d0,C_INTPTR_T);
-        end do
-        end do
-        end do
+        u1spe(:,:,:)=CMPLX(u1(:,:,:) + deltat * dreal(u1tA(:,:,:)) / 2.d0 ,0.d0,C_INTPTR_T);
+        u2spe(:,:,:)=CMPLX(u2(:,:,:) + deltat * dreal(u2tA(:,:,:)) / 2.d0 ,0.d0,C_INTPTR_T);
+        u3spe(:,:,:)=CMPLX(u3(:,:,:) + deltat * dreal(u3tA(:,:,:)) / 2.d0 ,0.d0,C_INTPTR_T);
         !
         call fft3d(u1spe)
         call fft3d(u2spe)
@@ -241,15 +225,9 @@ module solution
         call compute_ut(u1tB, u2tB, u3tB)
         !
         ! Step 3
-        do k=1,km
-        do j=1,jm
-        do i=1,im
-            u1spe(i,j,k) = CMPLX(u1(i,j,k) - deltat * dreal(u1tA(i,j,k)) + 2.d0*deltat * dreal(u1tB(i,j,k)), 0.d0, C_INTPTR_T)
-            u2spe(i,j,k) = CMPLX(u2(i,j,k) - deltat * dreal(u2tA(i,j,k)) + 2.d0*deltat * dreal(u2tB(i,j,k)), 0.d0, C_INTPTR_T)
-            u3spe(i,j,k) = CMPLX(u3(i,j,k) - deltat * dreal(u3tA(i,j,k)) + 2.d0*deltat * dreal(u3tB(i,j,k)), 0.d0, C_INTPTR_T)
-        end do
-        end do
-        end do
+        u1spe(:,:,:) = CMPLX(u1(:,:,:) - deltat * dreal(u1tA(:,:,:)) + 2.d0*deltat * dreal(u1tB(:,:,:)), 0.d0, C_INTPTR_T)
+        u2spe(:,:,:) = CMPLX(u2(:,:,:) - deltat * dreal(u2tA(:,:,:)) + 2.d0*deltat * dreal(u2tB(:,:,:)), 0.d0, C_INTPTR_T)
+        u3spe(:,:,:) = CMPLX(u3(:,:,:) - deltat * dreal(u3tA(:,:,:)) + 2.d0*deltat * dreal(u3tB(:,:,:)), 0.d0, C_INTPTR_T)
         !
         call fft3d(u1spe)
         call fft3d(u2spe)
@@ -258,15 +236,9 @@ module solution
         call compute_ut(u1tC, u2tC, u3tC)
         !
         ! Final update
-        do k=1,km
-        do j=1,jm
-        do i=1,im
-            u1(i,j,k) = u1(i,j,k) + deltat * (dreal(u1tA(i,j,k)) + 4.d0 * dreal(u1tB(i,j,k)) + dreal(u1tC(i,j,k))) / 6.d0
-            u2(i,j,k) = u2(i,j,k) + deltat * (dreal(u2tA(i,j,k)) + 4.d0 * dreal(u2tB(i,j,k)) + dreal(u2tC(i,j,k))) / 6.d0
-            u3(i,j,k) = u3(i,j,k) + deltat * (dreal(u3tA(i,j,k)) + 4.d0 * dreal(u3tB(i,j,k)) + dreal(u3tC(i,j,k))) / 6.d0
-        end do
-        end do
-        end do
+        u1(:,:,:) = u1(:,:,:) + deltat * (dreal(u1tA(:,:,:)) + 4.d0 * dreal(u1tB(:,:,:)) + dreal(u1tC(:,:,:))) / 6.d0
+        u2(:,:,:) = u2(:,:,:) + deltat * (dreal(u2tA(:,:,:)) + 4.d0 * dreal(u2tB(:,:,:)) + dreal(u2tC(:,:,:))) / 6.d0
+        u3(:,:,:) = u3(:,:,:) + deltat * (dreal(u3tA(:,:,:)) + 4.d0 * dreal(u3tB(:,:,:)) + dreal(u3tC(:,:,:))) / 6.d0
         !
         !
     end subroutine RK33D
@@ -297,12 +269,8 @@ module solution
             !
             factor = dsqrt(target_energy/energy)
             !
-            do j=1,jm
-            do i=1,im
-                u1(i,j,0) = factor * u1(i,j,0) 
-                u2(i,j,0) = factor * u2(i,j,0) 
-            end do
-            end do
+            u1(:,:,0) = factor * u1(:,:,0) 
+            u2(:,:,0) = factor * u2(:,:,0) 
             !
             if (lio) then
                 call listwrite(hand_fo,factor)
@@ -312,12 +280,8 @@ module solution
             ! Linear forcing in a band of wave numbers in spectral space
             dk = 0.5d0
             !
-            do j=1,jm
-            do i=1,im
-                u1spe(i,j,1)=CMPLX(u1(i,j,0),0.d0,C_INTPTR_T);
-                u2spe(i,j,1)=CMPLX(u2(i,j,0),0.d0,C_INTPTR_T);
-            end do
-            end do
+            u1spe(:,:,1)=CMPLX(u1(:,:,0),0.d0,C_INTPTR_T);
+            u2spe(:,:,1)=CMPLX(u2(:,:,0),0.d0,C_INTPTR_T);
             !
             call fft2d(u1spe)
             call fft2d(u2spe)
@@ -348,12 +312,8 @@ module solution
             E = psum(E)/(ia*ja)
             factor = max(dsqrt(target_energy/E) - 1.d0, 0.d0)
             !
-            do j=1,jm
-            do i=1,im
-                u1(i,j,0) = u1(i,j,0) + factor * dreal(force1(i,j,1))
-                u2(i,j,0) = u2(i,j,0) + factor * dreal(force2(i,j,1))
-            end do
-            end do
+            u1(:,:,0) = u1(:,:,0) + factor * dreal(force1(:,:,1))
+            u2(:,:,0) = u2(:,:,0) + factor * dreal(force2(:,:,1))
             !
             if (lio) then
                 call listwrite(hand_fo,factor,E)
@@ -410,12 +370,8 @@ module solution
                 factor = 0.d0
             endif
             !
-            do j=1,jm
-            do i=1,im
-                u1(i,j,0) = u1(i,j,0) + factor * dreal(force1(i,j,1))
-                u2(i,j,0) = u2(i,j,0) + factor * dreal(force2(i,j,1))
-            end do
-            end do
+            u1(:,:,0) = u1(:,:,0) + factor * dreal(force1(:,:,1))
+            u2(:,:,0) = u2(:,:,0) + factor * dreal(force2(:,:,1))
             !
             if (lio) then
                 call listwrite(hand_fo,factor,E,energy,Fen,rand1,rand2)
@@ -466,12 +422,8 @@ module solution
             Fen = psum(Fen)/(ia*ja)
             factor = target_energy
             !
-            do j=1,jm
-            do i=1,im
-                u1(i,j,0) = u1(i,j,0) + factor * dreal(force1(i,j,1))
-                u2(i,j,0) = u2(i,j,0) + factor * dreal(force2(i,j,1))
-            end do
-            end do
+            u1(:,:,0) = u1(:,:,0) + factor * dreal(force1(:,:,1))
+            u2(:,:,0) = u2(:,:,0) + factor * dreal(force2(:,:,1))
             !
             if (lio) then
                 call listwrite(hand_fo,factor,E,energy,Fen,rand1,rand2)
@@ -507,15 +459,9 @@ module solution
             !
             factor = dsqrt(target_energy/energy)
             !
-            do k=1,km
-            do j=1,jm
-            do i=1,im
-                u1(i,j,k) = factor * u1(i,j,k) 
-                u2(i,j,k) = factor * u2(i,j,k)
-                u3(i,j,k) = factor * u3(i,j,k) 
-            end do
-            end do
-            end do
+            u1(:,:,:) = factor * u1(:,:,:) 
+            u2(:,:,:) = factor * u2(:,:,:)
+            u3(:,:,:) = factor * u3(:,:,:) 
             !
             if (lio) then
                 call listwrite(hand_fo,factor)
@@ -525,15 +471,9 @@ module solution
             ! Linear forcing in a band of wave numbers in spectral space
             dk = 0.5d0
             !
-            do k=1,km
-            do j=1,jm
-            do i=1,im
-                u1spe(i,j,k)=CMPLX(u1(i,j,k),0.d0,C_INTPTR_T);
-                u2spe(i,j,k)=CMPLX(u2(i,j,k),0.d0,C_INTPTR_T);
-                u3spe(i,j,k)=CMPLX(u3(i,j,k),0.d0,C_INTPTR_T);
-            end do
-            end do
-            end do
+            u1spe(:,:,:)=CMPLX(u1(:,:,:),0.d0,C_INTPTR_T);
+            u2spe(:,:,:)=CMPLX(u2(:,:,:),0.d0,C_INTPTR_T);
+            u3spe(:,:,:)=CMPLX(u3(:,:,:),0.d0,C_INTPTR_T);
             !
             call fft3d(u1spe)
             call fft3d(u2spe)
@@ -572,15 +512,9 @@ module solution
             E = psum(E)/(ia*ja*ka)
             factor = max(dsqrt(target_energy/E) - 1.d0, 0.d0)
             !
-            do k=1,km
-            do j=1,jm
-            do i=1,im
-                u1(i,j,k) = u1(i,j,k) + factor * dreal(force1(i,j,k))
-                u2(i,j,k) = u2(i,j,k) + factor * dreal(force2(i,j,k))
-                u3(i,j,k) = u3(i,j,k) + factor * dreal(force3(i,j,k))
-            end do
-            end do
-            end do
+            u1(:,:,:) = u1(:,:,:) + factor * dreal(force1(:,:,:))
+            u2(:,:,:) = u2(:,:,:) + factor * dreal(force2(:,:,:))
+            u3(:,:,:) = u3(:,:,:) + factor * dreal(force3(:,:,:))
             !
             if (lio) then
                 call listwrite(hand_fo,factor,E)
@@ -645,15 +579,9 @@ module solution
             Fen = psum(Fen)/(ia*ja*ka)
             factor = (dsqrt((target_energy - energy) * Fen + E**2) - E)/Fen
             !
-            do k=1,km
-            do j=1,jm
-            do i=1,im
-                u1(i,j,k) = u1(i,j,k) + factor * dreal(force1(i,j,k))
-                u2(i,j,k) = u2(i,j,k) + factor * dreal(force2(i,j,k))
-                u3(i,j,k) = u3(i,j,k) + factor * dreal(force3(i,j,k))
-            end do
-            end do
-            end do
+            u1(:,:,:) = u1(:,:,:) + factor * dreal(force1(:,:,:))
+            u2(:,:,:) = u2(:,:,:) + factor * dreal(force2(:,:,:))
+            u3(:,:,:) = u3(:,:,:) + factor * dreal(force3(:,:,:))
             !
             if (lio) then
                 call listwrite(hand_fo,factor,E,energy,Fen)
@@ -668,7 +596,6 @@ module solution
         !
         implicit none
         complex(C_DOUBLE_COMPLEX), pointer, intent(out) :: u1t(:,:,:), u2t(:,:,:)
-        integer :: i,j
         !
         !
         u1x1 = imag * u1spe * k1 
@@ -687,14 +614,12 @@ module solution
         call ifft2d(u1spe)
         call ifft2d(u2spe)
         !
-        do j=1,jm
-        do i=1,im
-            !
-            u1t(i,j,1) = - u1spe(i,j,1) * dreal(u1x1(i,j,1)) - u2spe(i,j,1) * dreal(u1x2(i,j,1)) + nu * dreal(u1xixi(i,j,1))
-            u2t(i,j,1) = - u1spe(i,j,1) * dreal(u2x1(i,j,1)) - u2spe(i,j,1) * dreal(u2x2(i,j,1)) + nu * dreal(u2xixi(i,j,1))
-            !
-        end do
-        end do
+        u1t(:,:,1) = - dreal(u1spe(:,:,1)) * dreal(u1x1(:,:,1)) &
+                     - dreal(u2spe(:,:,1)) * dreal(u1x2(:,:,1)) &
+                     + nu * dreal(u1xixi(:,:,1))
+        u2t(:,:,1) = - dreal(u1spe(:,:,1)) * dreal(u2x1(:,:,1)) &
+                     - dreal(u2spe(:,:,1)) * dreal(u2x2(:,:,1)) &
+                     + nu * dreal(u2xixi(:,:,1))
         !
         !!!! Do 2d FFT
         !
@@ -720,7 +645,6 @@ module solution
         !
         implicit none
         complex(C_DOUBLE_COMPLEX), pointer, intent(out) :: u1t(:,:,:), u2t(:,:,:), u3t(:,:,:)
-        integer :: i,j,k
         !
         !
         u1x1 = imag * u1spe * k1 
@@ -752,20 +676,12 @@ module solution
         call ifft3d(u2spe)
         call ifft3d(u3spe)
         !
-        do k=1,km
-        do j=1,jm
-        do i=1,im
-            !
-            u1t(i,j,k) = - u1spe(i,j,k) * dreal(u1x1(i,j,k)) - u2spe(i,j,k) * dreal(u1x2(i,j,k)) &
-                         - u3spe(i,j,k) * dreal(u1x3(i,j,k)) + nu * dreal(u1xixi(i,j,k))
-            u2t(i,j,k) = - u1spe(i,j,k) * dreal(u2x1(i,j,k)) - u2spe(i,j,k) * dreal(u2x2(i,j,k)) &
-                         - u3spe(i,j,k) * dreal(u2x3(i,j,k)) + nu * dreal(u2xixi(i,j,k))
-            u3t(i,j,k) = - u1spe(i,j,k) * dreal(u3x1(i,j,k)) - u2spe(i,j,k) * dreal(u3x2(i,j,k)) &
-                         - u3spe(i,j,k) * dreal(u3x3(i,j,k)) + nu * dreal(u3xixi(i,j,k))
-            !
-        end do
-        end do
-        end do
+        u1t(:,:,:) = - u1spe(:,:,:) * dreal(u1x1(:,:,:)) - u2spe(:,:,:) * dreal(u1x2(:,:,:)) &
+                     - u3spe(:,:,:) * dreal(u1x3(:,:,:)) + nu * dreal(u1xixi(:,:,:))
+        u2t(:,:,:) = - u1spe(:,:,:) * dreal(u2x1(:,:,:)) - u2spe(:,:,:) * dreal(u2x2(:,:,:)) &
+                     - u3spe(:,:,:) * dreal(u2x3(:,:,:)) + nu * dreal(u2xixi(:,:,:))
+        u3t(:,:,:) = - u1spe(:,:,:) * dreal(u3x1(:,:,:)) - u2spe(:,:,:) * dreal(u3x2(:,:,:)) &
+                     - u3spe(:,:,:) * dreal(u3x3(:,:,:)) + nu * dreal(u3xixi(:,:,:))
         !
         !!!! Do 2d FFT
         !
@@ -1163,7 +1079,11 @@ module solution
             error stop 'ndims should be 2 or 3!'
         end select
         time = 0.d0
-        nu = miucal(1.d0)/Reynolds
+        if(Reynolds == 0.d0) then
+            nu = 0.d0
+        else
+            nu = miucal(1.d0)/Reynolds
+        end if
         if(mpirank == 0) print *, 'nu=', nu
         if(mpirank==0) print *, 'allkmax=', allkmax
     end subroutine quantity_prepare

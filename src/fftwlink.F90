@@ -331,11 +331,7 @@ module fftwlink
         include 'fftw3-mpi.f03'
         !
         call fftw_mpi_execute_dft(forward_plan,array,array)
-        do j=1,jm
-        do i=1,im
-            array(i,j,1)=array(i,j,1)/(1.d0*ia*ja)
-        end do
-        end do
+        array(:,:,1)=array(:,:,1)/(1.d0*ia*ja)
     end subroutine fft2d
     !
     subroutine fft3d(array)
@@ -348,13 +344,7 @@ module fftwlink
         include 'fftw3-mpi.f03'
         !
         call fftw_mpi_execute_dft(forward_plan,array,array)
-        do k=1,km
-        do j=1,jm
-        do i=1,im
-            array(i,j,k)=array(i,j,k)/(1.d0*ia*ja*ka)
-        end do
-        end do
-        end do
+        array(:,:,:)=array(:,:,:)/(1.d0*ia*ja*ka)
     end subroutine fft3d
     !
      subroutine ifft2d(array)

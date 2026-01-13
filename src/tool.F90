@@ -146,59 +146,69 @@ module tool
         endif
     end function kint
     !
-    subroutine dealiasing(field)
+    subroutine dealiasing(field,factor)
         !
         use commvar, only: ndims
         !
         implicit none
         complex(8), dimension(:,:,:), intent(inout) :: field
+        integer, intent(in), optional :: factor
+        integer :: f
+        !
+        if (present(factor)) then
+            f = factor
+        else
+            f = 3
+        end if
         !
         select case(ndims)
         case(2)
-            call dealiasing2D(field)
+            call dealiasing2D(field,f)
         case(3)
-            call dealiasing3D(field)
+            call dealiasing3D(field,f)
         case default
             stop "dealiasing Error! ndims should be 2 or 3!"
         end select
         !
     end subroutine dealiasing
     !
-    subroutine dealiasing2D(field)
+    subroutine dealiasing2D(field,factor)
         ! Applies 2/3-rule dealiasing to a 2D spectral field
         ! The entered field should be in spectral space
         use commvar, only : k1, k2
         implicit none
         complex(8), dimension(:,:,:), intent(inout) :: field
+        integer, intent(in) :: factor
         integer :: i, j, cutoff
         real(8) :: k
         !
-        cutoff = int(ia / 3)
+        cutoff = floor(real(ia, 8) / real(factor, 8))
         do j=1,jm
         do i=1,im
             k = dsqrt(k1(i,j,0)**2 + k2(i,j,0)**2)
-            if (k > cutoff) then
+            if (k >= cutoff) then
                 field(i,j,1) = 0.d0
             end if
         end do
         end do
     end subroutine dealiasing2D
     !
-    subroutine dealiasing3D(field)
+    subroutine dealiasing3D(field,factor)
         ! Applies 2/3-rule dealiasing to a 3D spectral field
         ! The entered field should be in spectral space
         use commvar, only : k1, k2, k3
         implicit none
         complex(8), dimension(:,:,:), intent(inout) :: field
+        integer, intent(in) :: factor
         integer :: i, j, k, cutoff
         real(8) :: kk
         !
-        cutoff = int(ia / 3)
+        cutoff = floor(real(ia, 8) / real(factor, 8))
         do k=1,km
         do j=1,jm
         do i=1,im
             kk = dsqrt(k1(i,j,k)**2 + k2(i,j,k)**2 + k3(i,j,k)**2)
-            if (kk > cutoff) then
+            if (kk >= cutoff) then
                 field(i,j,k) = 0.d0
             end if
         end do
