@@ -32,8 +32,8 @@ TARGET_PP = $(BINDIR)/$(EXE_PP)
 
 VPATH = $(SRCDIR):$(OBJDIR)
 
-srs= random.F90 cmdefne.F90 commtype.F90 constdef.F90 commvar.F90 strings.F90 stlaio.F90 utility.F90 \
-	tool.F90 parallel.F90 fftwlink.F90 hdf5io.F90 readwrite.F90 solution.F90\
+srs= random.F90  commtype.F90 constdef.F90 commvar.F90 strings.F90 stlaio.F90 utility.F90 \
+	tool.F90 parallel.F90 cmdefne.F90 fftwlink.F90 hdf5io.F90 readwrite.F90 solution.F90\
 	Bastr.F90 Bastrpp.F90
       
 OBJS=$(filter-out Bastrpp.o,$(srs:.F90=.o))

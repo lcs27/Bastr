@@ -414,12 +414,18 @@ module fftwlink
         call allocate_fftw_complex(thetaxixi, c_thetaxixi)
         call allocate_fftw_complex(u1tA,     c_u1tA)
         call allocate_fftw_complex(u2tA,     c_u2tA)
-        call allocate_fftw_complex(u1tB,     c_u1tB)
-        call allocate_fftw_complex(u2tB,     c_u2tB)
-        call allocate_fftw_complex(u1tC,     c_u1tC)
-        call allocate_fftw_complex(u2tC,     c_u2tC)
         call allocate_fftw_complex(force1,   c_force1)
         call allocate_fftw_complex(force2,   c_force2)
+        if(timemethod==1)then
+            call allocate_fftw_complex(u1tB,     c_u1tB)
+            call allocate_fftw_complex(u2tB,     c_u2tB)
+            call allocate_fftw_complex(u1tC,     c_u1tC)
+            call allocate_fftw_complex(u2tC,     c_u2tC)
+        elseif(timemethod==2)then
+            allocate(u1old(1:im,1:jm,0:km), u2old(1:im,1:jm,0:km))
+        else
+            stop 'allocation2D: timemethod not recognized!'
+        endif
         !
     end subroutine allocation2D
     !

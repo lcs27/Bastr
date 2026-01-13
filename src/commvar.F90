@@ -24,7 +24,8 @@ module commvar
   character(len=10) :: turbmode
   complex(8) :: imag = CMPLX(0.d0,1.d0,8)
   !
-  real(8), allocatable :: u1(:,:,:), u2(:,:,:), u3(:,:,:)
+  real(8), allocatable, dimension(:,:,:) :: u1, u2, u3
+  real(8), allocatable, dimension(:,:,:) :: u1old, u2old, u3old
   real(8), allocatable, dimension(:,:,:) :: k1,k2,k3
   !
   !

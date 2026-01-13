@@ -74,7 +74,13 @@ module solution
             nstep = nstep + 1 
             time = time + deltat
             !
-            call RK32D
+            if(timemethod==1) then
+                call RK32D
+            elseif(timemethod==2) then
+                call CN2D
+            else
+                stop 'mainloop2D: timemethod not recognized!'   
+            endif
             !
             !
             call forcing2D(hand_fo)
@@ -178,6 +184,34 @@ module solution
         !
         !
     end subroutine RK32D
+    !
+    subroutine CN2D
+        !
+        !
+        implicit none
+        integer :: step
+        !
+        u1old(:,:,0) = u1(:,:,0)
+        u2old(:,:,0) = u2(:,:,0)
+        !
+        do step=1,6
+            !
+            call compute_ut(u1tA, u2tA)
+            !
+            u1(:,:,0) = u1old(:,:,0) + deltat * dreal(u1tA(:,:,1))
+            u2(:,:,0) = u2old(:,:,0) + deltat * dreal(u2tA(:,:,1))
+            !
+            if(step==6) exit
+            !
+            u1spe(:,:,1) = CMPLX(0.5 * (u1(:,:,0) + u1old(:,:,0)), 0.d0, C_INTPTR_T)
+            u2spe(:,:,1) = CMPLX(0.5 * (u2(:,:,0) + u2old(:,:,0)), 0.d0, C_INTPTR_T)
+            !
+            call fft2d(u1spe)
+            call fft2d(u2spe)
+            !
+        end do
+
+    end subroutine CN2D
     !
     subroutine RK33D
         !

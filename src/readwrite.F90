@@ -37,7 +37,7 @@ module readwrite
       read(fh,'(/)')
       read(fh,*)ref_tem,reynolds
       read(fh,'(/)')
-      read(fh,*)maxstep,deltat,lwsequ,feqwsequ,lwspectra,feqwspe,kmax
+      read(fh,*)maxstep,deltat,lwsequ,feqwsequ,lwspectra,feqwspe,kmax,timemethod
       read(fh,'(/)')
       read(fh,*)forcemethod, forcek, target_energy, lprojectd
       read(fh,'(/)')
@@ -62,6 +62,7 @@ module readwrite
     call bcast(target_energy)
     call bcast(lprojectd)
     call bcast(kmax)
+    call bcast(timemethod)
     call bcast(forcek)
     call bcast(initialmethod)
     !
@@ -94,6 +95,13 @@ module readwrite
       print *, 'lwspectra=', lwspectra
       print *, 'feqwspe=', feqwspe
       print *, 'kmax=', allkmax
+      if(timemethod==1)then
+        print *, 'timemethod= RK3'
+      elseif(timemethod==2)then
+        print *, 'timemethod= CN'
+      else
+        stop 'Undefined time method'
+      endif
       print *, 'forcemethod=', forcemethod
       print *, 'forcek=', forcek
       print *, 'target_energy=', target_energy
