@@ -392,6 +392,7 @@ module fftwlink
         include 'fftw3-mpi.f03'
         allocate(u1(1:im,1:jm,0:km), u2(1:im,1:jm,0:km))
         allocate(k1(1:im,1:jm,0:km), k2(1:im,1:jm,0:km))
+        allocate(random_angle(1:im,1:jm,0:km))
         !
         call allocate_fftw_complex(u1spe, c_u1spe)
         call allocate_fftw_complex(u2spe, c_u2spe)
@@ -406,6 +407,7 @@ module fftwlink
         call allocate_fftw_complex(u2tA,     c_u2tA)
         call allocate_fftw_complex(force1,   c_force1)
         call allocate_fftw_complex(force2,   c_force2)
+        call allocate_fftw_complex(random_complex, c_randomcomplex)
         if(timemethod==1)then
             call allocate_fftw_complex(u1tB,     c_u1tB)
             call allocate_fftw_complex(u2tB,     c_u2tB)
@@ -424,6 +426,7 @@ module fftwlink
         include 'fftw3-mpi.f03'
         allocate(u1(1:im,1:jm,1:km), u2(1:im,1:jm,1:km), u3(1:im,1:jm,1:km))
         allocate(k1(1:im,1:jm,1:km), k2(1:im,1:jm,1:km), k3(1:im,1:jm,1:km))
+        allocate(random_angle(1:im,1:jm,1:km))
         !
         call allocate_fftw_complex(u1spe, c_u1spe)
         call allocate_fftw_complex(u2spe, c_u2spe)
@@ -453,6 +456,7 @@ module fftwlink
         call allocate_fftw_complex(force1,   c_force1)
         call allocate_fftw_complex(force2,   c_force2)
         call allocate_fftw_complex(force3,   c_force3)
+        call allocate_fftw_complex(random_complex, c_randomcomplex)
         !
     end subroutine allocation3D
     !
@@ -484,7 +488,7 @@ module fftwlink
         use commvar
         include 'fftw3-mpi.f03'
         !
-        deallocate(u1,u2,u3,k1,k2,k3)
+        deallocate(u1,u2,u3,k1,k2,k3,random_angle)
         call fftw_free(c_u1spe)
         call fftw_free(c_u2spe)
         call fftw_free(c_u3spe)
@@ -513,6 +517,7 @@ module fftwlink
         call fftw_free(c_force1)
         call fftw_free(c_force2)
         call fftw_free(c_force3)
+        call fftw_free(c_randomcomplex)
     end subroutine deallocation3D
     !
     subroutine deallocation2D
@@ -520,7 +525,7 @@ module fftwlink
         use commvar
         include 'fftw3-mpi.f03'
         !
-        deallocate(u1,u2,k1,k2)
+        deallocate(u1,u2,k1,k2,random_angle)
         call fftw_free(c_u1spe)
         call fftw_free(c_u2spe)
         call fftw_free(c_u1x1)
@@ -538,5 +543,6 @@ module fftwlink
         call fftw_free(c_u2tC)
         call fftw_free(c_force1)
         call fftw_free(c_force2)
+        call fftw_free(c_randomcomplex)
     end subroutine deallocation2D
 end module fftwlink

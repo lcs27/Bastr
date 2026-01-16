@@ -65,6 +65,8 @@ program Bastrpp
     call spectra2d(thefilenumb)
   elseif(trim(cmd)=='hitgen2d')then
     call create_initial_field_2d
+  elseif(trim(cmd)=='hitgen2dbis')then
+    call create_initial_field_2d_bis
   else
     if(mpirank==0) print *, ' Unknown pp command!'
   endif
@@ -401,21 +403,18 @@ subroutine create_initial_field_2d
   use commvar
   use parallel,  only : mpirank,bcast
   use solution
-  use random, only:h
   !
   implicit none
   character(len=128) :: infilename
   real(8), parameter :: PI = 3.14159265358979323846d0
-  integer :: hand_f, i,j
-  integer :: time_values(8),seed(8)
+  integer :: hand_f, i,j,nseed
+  integer, allocatable :: seed(:)
   real(8) :: var1,var2
   real(8) :: rand1,rand2
   real(8) :: kx,ky,kk,energy,factor
-  real(8), allocatable :: random_angle(:,:,:)
   !
   call quantity_prepare
   !
-  allocate(random_angle(1:im,1:jm,0:km))
   !
   do j=1,jm
   do i=1,im
@@ -424,34 +423,22 @@ subroutine create_initial_field_2d
   end do
   end do
   !
-  call date_and_time(values=time_values)
-  !
-  do i = 1, 8
-      seed(i) = time_values(1) * 10000000 + &   ! 年
-              time_values(2) * 100000 + &     ! 月
-              time_values(3) * 1000 + &       ! 日
-              ABS(time_values(4)) * 100 + &   ! 时差
-              time_values(5) * 6000000 + &    ! 时
-              time_values(6) * 60000 + &      ! 分
-              time_values(7) * 600 + &        ! 秒
-              time_values(8) * 60  ! 毫秒
-      seed(i) = seed(i) + i * 314159
-      !
-      if (seed(i) < 0) seed(i) = -seed(i)
-      !
-      seed(i) = mod(seed(i), 1000000000)
+  call random_seed(size=nseed)
+  allocate(seed(1:nseed))
+  call system_clock(count=seed(1))
+  do i = 2, nseed
+      seed(i) = seed(i-1) * 1103515245 + 12345
   end do
+  !
   call random_seed(put=seed)
   !
-  if(lio)then
-      call random_number(rand1)
-      call random_number(rand2)
-  endif
-  call bcast(rand1)
-  call bcast(rand2)
-  if(lio) then
-      print *, ' Random seeds:', rand1, rand2
-  endif
+  deallocate(seed)
+  !
+  call random_number(random_angle)
+  !
+  random_complex(:,:,1) = CMPLX(random_angle(:,:,0),0.d0,C_INTPTR_T)
+  !
+  call fft2d(random_complex)
   !
   do j=1,jm
   do i=1,im
@@ -467,7 +454,7 @@ subroutine create_initial_field_2d
       var1=kk**4*exp(-2.d0*(kk/forcek)**2)
       var2=sqrt(var1/2.d0/PI/kk)
       !
-      random_angle(i,j,0) =  h(kx,ky,rand1,rand2) * PI
+      random_angle(i,j,0) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
       u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
       u2spe(i,j,1) = var2*ky/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
     end if
@@ -477,12 +464,8 @@ subroutine create_initial_field_2d
   call ifft2d(u1spe)
   call ifft2d(u2spe)
   !
-  do j=1,jm
-  do i=1,im
-      u1(i,j,0) = dreal(u1spe(i,j,1))
-      u2(i,j,0) = dreal(u2spe(i,j,1))
-  end do
-  end do
+  u1(:,:,0) = dreal(u1spe(:,:,1))
+  u2(:,:,0) = dreal(u2spe(:,:,1))
   !
   energy = 0.d0
   do j=1,jm
@@ -493,12 +476,8 @@ subroutine create_initial_field_2d
   energy = psum(energy)/(ia*ja)
   factor = dsqrt(target_energy/energy)
   ! scale the field to the target energy
-  do j=1,jm
-  do i=1,im
-      u1(i,j,0) = u1(i,j,0) * factor
-      u2(i,j,0) = u2(i,j,0) * factor
-  end do
-  end do
+  u1(:,:,0) = u1(:,:,0) * factor
+  u2(:,:,0) = u2(:,:,0) * factor
   !
   infilename='datin/flowini2d.h5'
   !
@@ -511,6 +490,205 @@ subroutine create_initial_field_2d
   if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
   !
 end subroutine create_initial_field_2d
+!
+subroutine create_initial_field_2d_bis
+  ! This imposes the uiuitheta
+  use hdf5io
+  use commvar
+  use parallel,  only : mpirank,bcast
+  use solution
+  !
+  implicit none
+  character(len=128) :: infilename
+  real(8), parameter :: PI = 3.14159265358979323846d0
+  integer :: hand_f, i,j,nseed
+  integer, allocatable :: seed(:)
+  real(8) :: var1,var2
+  real(8) :: rand1,rand2
+  real(8) :: kx,ky,kk,energy,factor
+  real(8), allocatable, dimension(:,:,:) :: thetaA, thetaB,u1A,u1B,u2A,u2B
+  type(C_PTR) :: c_thetaspe
+  complex(c_double_complex), pointer, dimension(:,:,:):: thetaspe
+  real(8) :: QX,QY,QZ,QW,QP,QQ,QDELTA,temp1,temp2,alpha,Qvalue
+  call quantity_prepare
+  !
+  call allocate_fftw_complex(thetaspe, c_thetaspe)
+  allocate(u1A(1:im,1:jm,1:1),u1B(1:im,1:jm,1:1),u2A(1:im,1:jm,1:1),u2B(1:im,1:jm,1:1))
+  allocate(thetaA(1:im,1:jm,1:1),thetaB(1:im,1:jm,1:1))
+  !
+  !
+  call random_seed(size=nseed)
+  allocate(seed(1:nseed))
+  call system_clock(count=seed(1))
+  do i = 2, nseed
+      seed(i) = seed(i-1) * 1103515245 + 12345
+  end do
+  !
+  call random_seed(put=seed)
+  !
+  deallocate(seed)
+  !
+  ! First field generation
+  !
+  call random_number(random_angle)
+  !
+  random_complex(:,:,1) = CMPLX(random_angle(:,:,0),0.d0,C_INTPTR_T)
+  !
+  call fft2d(random_complex)
+  !
+  do j=1,jm
+  do i=1,im
+    kx = k1(i,j,0)
+    ky = k2(i,j,0)
+    kk=dsqrt(kx**2+ky**2)
+    if(kx==0 .and. ky==0) then
+      u1spe(i,j,1)=0.d0
+      u2spe(i,j,1)=0.d0
+      thetaspe(i,j,1)=0.d0
+    else
+      ! ran1: random number distributied in (0,1)
+      !
+      var1=kk**4*exp(-2.d0*(kk/forcek)**2)
+      var2=sqrt(var1/2.d0/PI/kk)
+      !
+      random_angle(i,j,0) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
+      u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+      u2spe(i,j,1) = var2*ky/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+      thetaspe(i,j,1) = CMPLX(0.d0,1.d0,C_INTPTR_T) * (kx * u1spe(i,j,1) + ky * u2spe(i,j,1))
+    end if
+  enddo
+  enddo
+  !
+  call ifft2d(u1spe)
+  call ifft2d(u2spe)
+  call ifft2d(thetaspe)
+  !
+  u1A(:,:,1) = dreal(u1spe(:,:,1))
+  u2A(:,:,1) = dreal(u2spe(:,:,1))
+  thetaA(:,:,1)= dreal(thetaspe(:,:,1))
+  !
+  !
+  ! Second field generation
+  !
+  call random_number(random_angle)
+  !
+  random_complex(:,:,1) = CMPLX(random_angle(:,:,0),0.d0,C_INTPTR_T)
+  !
+  call fft2d(random_complex)
+  !
+  do j=1,jm
+  do i=1,im
+    kx = k1(i,j,0)
+    ky = k2(i,j,0)
+    kk=dsqrt(kx**2+ky**2)
+    if(kx==0 .and. ky==0) then
+      u1spe(i,j,1)=0.d0
+      u2spe(i,j,1)=0.d0
+      thetaspe(i,j,1)=0.d0
+    else
+      ! ran1: random number distributied in (0,1)
+      !
+      var1=kk**4*exp(-2.d0*(kk/forcek)**2)
+      var2=sqrt(var1/2.d0/PI/kk)
+      !
+      random_angle(i,j,0) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
+      u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+      u2spe(i,j,1) = var2*ky/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+      thetaspe(i,j,1) = CMPLX(0.d0,1.d0,C_INTPTR_T) * (kx * u1spe(i,j,1) + ky * u2spe(i,j,1))
+    end if
+  enddo
+  enddo
+  !
+  call ifft2d(u1spe)
+  call ifft2d(u2spe)
+  call ifft2d(thetaspe)
+  !
+  u1B(:,:,1) = dreal(u1spe(:,:,1))
+  u2B(:,:,1) = dreal(u2spe(:,:,1))
+  thetaB(:,:,1)= dreal(thetaspe(:,:,1))
+  !
+  ! Factor solution
+  QX = 0.d0
+  QY = 0.d0
+  QZ = 0.d0
+  QW = 0.d0
+  !
+  do j=1,jm
+  do i=1,im
+    QX = QX + (u1A(i,j,1) * u1A(i,j,1) + u2A(i,j,1) * u2A(i,j,1)) * thetaA(i,j,1)
+    QY = QY + (u1B(i,j,1) * u1A(i,j,1) + u2B(i,j,1) * u2A(i,j,1)) * thetaA(i,j,1) + &
+              (u1A(i,j,1) * u1B(i,j,1) + u2A(i,j,1) * u2B(i,j,1)) * thetaA(i,j,1) + &
+              (u1A(i,j,1) * u1A(i,j,1) + u2A(i,j,1) * u2A(i,j,1)) * thetaB(i,j,1)
+    QZ = QZ + (u1B(i,j,1) * u1B(i,j,1) + u2B(i,j,1) * u2B(i,j,1)) * thetaA(i,j,1) + &
+              (u1A(i,j,1) * u1B(i,j,1) + u2A(i,j,1) * u2B(i,j,1)) * thetaB(i,j,1) + &
+              (u1B(i,j,1) * u1A(i,j,1) + u2B(i,j,1) * u2A(i,j,1)) * thetaB(i,j,1)
+    QW = QW + (u1B(i,j,1) * u1B(i,j,1) + u2B(i,j,1) * u2B(i,j,1)) * thetaB(i,j,1)
+  enddo
+  enddo
+  QX = psum(QX)/(1.d0*ia*ja)
+  QY = psum(QY)/(1.d0*ia*ja)
+  QZ = psum(QZ)/(1.d0*ia*ja)
+  QW = psum(QW)/(1.d0*ia*ja)
+  !
+  if(mpirank==0) print *, 'QX', QX, 'QY', QY, 'QZ', QZ, 'QW', QW
+  !
+  ! Solution of 3rd order equation
+  ! Depressed cubic coefficients
+  QP = QY/QW - (1.d0/3.d0)*(QZ/QW)**2
+  QQ = 2.d0/27.d0*(QZ/QW)**3 - (1.d0/3.d0)*(QZ*QY)/QW**2 + QX/QW
+  !
+  ! Discriminant
+  QDELTA = (QQ/2.d0)**2 + (QP/3.d0)**3
+  !
+  ! Solve cubic
+  if (QDELTA >= 0.d0) then
+    ! Cardano formula (real cube roots)
+    temp1 = -QQ/2.d0 + SQRT(QDELTA)
+    temp2 = -QQ/2.d0 - SQRT(QDELTA)
+    alpha = SIGN(ABS(temp1)**(1.d0/3.d0), temp1) + &
+            SIGN(ABS(temp2)**(1.d0/3.d0), temp2) - QZ/(3.d0*QW)
+  else
+    ! Trigonometric formula
+    alpha = 2.d0*SQRT(-QP/3.d0) * COS( (1.d0/3.d0) * ACOS(3.d0*QQ/(2.d0*QP) * SQRT(-3.d0/QP)) ) - &
+            QZ/(3.d0*QW)
+  end if
+
+  ! Check the solution
+  Qvalue = QX + alpha*QY + alpha**2*QZ + alpha**3*QW
+
+  ! Print results
+  if(mpirank==0) print *, "alpha = ", alpha, "Check equation (=0)", Qvalue
+  !
+  call mpi_barrier(mpi_comm_world,ierr)
+  !
+  ! Summation
+  u1(:,:,0) = u1A(:,:,1) + alpha * u1B(:,:,1)
+  u2(:,:,0) = u2A(:,:,1) + alpha * u2B(:,:,1)
+  !
+  ! Normalization
+  energy = 0.d0
+  do j=1,jm
+  do i=1,im
+      energy = energy + (u1(i,j,0)**2 + u2(i,j,0)**2)
+  end do
+  end do
+  energy = psum(energy)/(ia*ja)
+  factor = dsqrt(target_energy/energy)
+  !
+  ! scale the field to the target energy
+  u1(:,:,0) = u1(:,:,0) * factor
+  u2(:,:,0) = u2(:,:,0) * factor
+  !
+  infilename='datin/flowini2d.h5'
+  !
+  call h5io_init(trim(infilename),mode='write')
+  call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode='h')
+  call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode='h')
+  call h5write(varname='random_angle',var=random_angle(1:im,1:jm,0:km),mode='h')
+  call h5io_end
+  !
+  if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
+end subroutine
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! End of the pp program
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!

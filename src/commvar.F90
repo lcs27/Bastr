@@ -44,10 +44,11 @@ module commvar
   !
   ! Middle process for RK3
   type(C_PTR) :: c_u1tA, c_u2tA, c_u3tA, c_u1tB, c_u2tB, c_u3tB, c_u1tC, c_u2tC, &
-                 c_u3tC, c_force1, c_force2, c_force3
+                 c_u3tC, c_force1, c_force2, c_force3, c_randomcomplex
   complex(c_double_complex), pointer, dimension(:,:,:):: &
                  u1tA, u2tA, u3tA, u1tB, u2tB, u3tB, u1tC, u2tC, u3tC, &
-                 force1, force2, force3
+                 force1, force2, force3, random_complex
+  real(8), allocatable, dimension(:,:,:) :: random_angle
   !
   real(8), allocatable, dimension(:) :: Es,Ed,kn
   integer, allocatable, dimension(:) :: Ecount
@@ -61,6 +62,8 @@ module commvar
   integer :: initialmethod
   !
   integer :: timemethod
+  !
+  logical :: lrestart = .false.
   !
   contains
   !

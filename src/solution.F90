@@ -245,7 +245,6 @@ module solution
     !
     subroutine forcing2D(hand_fo)
         use utility, only: listwrite
-        use random, only:h
         implicit none
         !
         integer, intent(in) :: hand_fo
@@ -253,7 +252,7 @@ module solution
         integer :: i,j
         real(8) :: energy, factor
         real(8) :: kk,dk,E
-        real(8) :: Fen, kx, ky, rand1, rand2, random_angle
+        real(8) :: Fen, kx, ky
         !
         if(forcemethod == 1)then
             ! Linear forcing with f_i = (factor-1) * u_i
@@ -324,12 +323,11 @@ module solution
             dk = 0.5d0
             !
             !
-            if(lio)then
-                call random_number(rand1)
-                call random_number(rand2)
-            endif
-            call bcast(rand1)
-            call bcast(rand2)
+            call random_number(random_angle)
+            !
+            random_complex(:,:,1) = CMPLX(random_angle(:,:,0),0.d0,C_INTPTR_T)
+            !
+            call fft2d(random_complex)
             !
             do j=1,jm
             do i=1,im
@@ -338,9 +336,9 @@ module solution
                 kk=dsqrt(kx**2+ky**2)
                 !
                 if((kk - dk)<forcek .and. (kk + dk)>forcek) then
-                    random_angle =  h(kx,ky,rand1,rand2) * PI
-                    force1(i,j,1) = kx/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
-                    force2(i,j,1) = ky/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
+                    random_angle(i,j,0) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
+                    force1(i,j,1) = kx/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+                    force2(i,j,1) = ky/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
                 else
                     force1(i,j,1) = 0.d0
                     force2(i,j,1) = 0.d0
@@ -374,18 +372,17 @@ module solution
             u2(:,:,0) = u2(:,:,0) + factor * dreal(force2(:,:,1))
             !
             if (lio) then
-                call listwrite(hand_fo,factor,E,energy,Fen,rand1,rand2)
+                call listwrite(hand_fo,factor,E,energy,Fen)
             endif
         elseif(forcemethod == 4) then
             ! Linear forcing in a band of wave numbers in spectral space
             dk = 0.5d0
             !
-            if(lio)then
-                call random_number(rand1)
-                call random_number(rand2)
-            endif
-            call bcast(rand1)
-            call bcast(rand2)
+            call random_number(random_angle)
+            !
+            random_complex(:,:,1) = CMPLX(random_angle(:,:,0),0.d0,C_INTPTR_T)
+            !
+            call fft2d(random_complex)
             !
             do j=1,jm
             do i=1,im
@@ -394,9 +391,9 @@ module solution
                 kk=dsqrt(kx**2+ky**2)
                 !
                 if((kk - dk)<forcek .and. (kk + dk)>forcek) then
-                    random_angle =  h(kx,ky,rand1,rand2) * PI
-                    force1(i,j,1) = kx/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
-                    force2(i,j,1) = ky/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
+                    random_angle(i,j,0) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
+                    force1(i,j,1) = kx/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+                    force2(i,j,1) = ky/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
                 else
                     force1(i,j,1) = 0.d0
                     force2(i,j,1) = 0.d0
@@ -426,7 +423,7 @@ module solution
             u2(:,:,0) = u2(:,:,0) + factor * dreal(force2(:,:,1))
             !
             if (lio) then
-                call listwrite(hand_fo,factor,E,energy,Fen,rand1,rand2)
+                call listwrite(hand_fo,factor,E,energy,Fen)
             endif
             !
         endif

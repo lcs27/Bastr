@@ -22,7 +22,7 @@ module utility
   !+-------------------------------------------------------------------+
   subroutine listinit(filename,handle,firstline)
     !
-    use commvar,   only: nstep
+    use commvar,   only: nstep,lrestart
     use strings,   only: split
     !
     character(len=*),intent(in) :: filename
@@ -31,7 +31,6 @@ module utility
     !
     character(len=16),allocatable :: args(:)
     logical :: fex
-    logical :: lrestart = .false.
     integer :: nargs,ns,ferr,n
     character(len=120) :: txtformat
     !

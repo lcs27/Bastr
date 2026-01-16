@@ -6,7 +6,6 @@
 program Bastr
   !
   ! TODO: To test adaptation for 3D
-  !       - 2D still march and gives the same result - OK
   !       - 3D to be tested
   use commvar
   use parallel
@@ -15,10 +14,12 @@ program Bastr
   use solution
   use readwrite
   use utility
+  use cmdefne
   include 'fftw3-mpi.f03'
   !
-  integer :: hand_f, hand_g, hand_a, hand_fo
-  integer :: time_values(8),seed(8)
+  integer :: hand_f, hand_g, hand_a, hand_fo, nseed
+  integer, allocatable :: seed(:)
+  character(len=16) :: cmd
   !
   call mpiinitial
   !
@@ -40,10 +41,26 @@ program Bastr
   call prepareplan_fftw_plan
   if(mpirank==0)  print*, '** fftw planing done!'
   !
-  call read_initial_field
-  !
   call quantity_prepare
   !
+  if(mpirank == 0) then
+    call readkeyboad(cmd)
+  endif
+  !
+  call bcast(cmd)
+  !
+  if (len_trim(cmd) == 0) then
+    lrestart = .false.
+    if(mpirank == 0) print*,' start from zero.... '
+    call read_initial_field
+  else
+    lrestart = .true.
+    read(cmd,'(i4)') filenumb
+    if(mpirank == 0) print*,'continue to run: start from ',filenumb
+    call read_continue_field
+  endif
+  !
+  ! Initial logs
   if(mpirank==0) then
     select case(ndims)
     case(2)
@@ -61,28 +78,20 @@ program Bastr
       call listinit(filename='log/stat3d_velgrad.dat',handle=hand_a, &
                       firstline='ns ti umumtheta2 umumijji u2theta dissp etamin Tay ReTay Kol')
     end select
-      if(forcemethod>0) then
-        call listinit(filename='log/factor_output.dat',handle=hand_fo, &
-                        firstline='ns ti factor')
-        call date_and_time(values=time_values)
-        do i = 1, 8
-            seed(i) = time_values(1) * 10000000 + &   ! 年
-                    time_values(2) * 100000 + &     ! 月
-                    time_values(3) * 1000 + &       ! 日
-                    ABS(time_values(4)) * 100 + &   ! 时差
-                    time_values(5) * 6000000 + &    ! 时
-                    time_values(6) * 60000 + &      ! 分
-                    time_values(7) * 600 + &        ! 秒
-                    time_values(8) * 60  ! 毫秒
-            seed(i) = seed(i) + i * 314159
-            !
-            if (seed(i) < 0) seed(i) = -seed(i)
-            !
-            seed(i) = mod(seed(i), 1000000000)
-        end do
-        !
-        call random_seed(put=seed)
-      end if
+    if(forcemethod>0) then
+      call listinit(filename='log/factor_output.dat',handle=hand_fo, &
+                      firstline='ns ti factor')
+      call random_seed(size=nseed)
+      allocate(seed(1:nseed))
+      call system_clock(count=seed(1))
+      do i = 2, nseed
+          seed(i) = seed(i-1) * 1103515245 + 12345
+      end do
+      !
+      call random_seed(put=seed)
+      !
+      deallocate(seed)
+    end if
   endif
   !
   ! Solution !
