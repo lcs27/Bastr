@@ -537,12 +537,17 @@ module fftwlink
         call fftw_free(c_thetaxixi)
         call fftw_free(c_u1tA)
         call fftw_free(c_u2tA)
-        call fftw_free(c_u1tB)
-        call fftw_free(c_u2tB)
-        call fftw_free(c_u1tC)
-        call fftw_free(c_u2tC)
         call fftw_free(c_force1)
         call fftw_free(c_force2)
         call fftw_free(c_randomcomplex)
+        if(timemethod==1)then
+            call fftw_free(c_u1tB)
+            call fftw_free(c_u2tB)
+            call fftw_free(c_u1tC)
+            call fftw_free(c_u2tC)
+        elseif(timemethod==2)then
+            deallocate(u1old,u2old)
+        endif
+        !
     end subroutine deallocation2D
 end module fftwlink

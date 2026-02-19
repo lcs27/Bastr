@@ -309,7 +309,7 @@ module solution
             end do
             end do
             E = psum(E)/(ia*ja)
-            factor = max(dsqrt(target_energy/E) - 1.d0, 0.d0)
+            factor = dsqrt(target_energy/E) - 1.d0
             !
             u1(:,:,0) = u1(:,:,0) + factor * dreal(force1(:,:,1))
             u2(:,:,0) = u2(:,:,0) + factor * dreal(force2(:,:,1))
@@ -362,11 +362,7 @@ module solution
             E = psum(E)/(ia*ja)
             energy = psum(energy)/(ia*ja)
             Fen = psum(Fen)/(ia*ja)
-            if(target_energy > energy) then
-                factor = (dsqrt((target_energy - energy) * Fen + E**2) - E)/Fen
-            else
-                factor = 0.d0
-            endif
+            factor = (dsqrt(max((target_energy - energy) * Fen + E**2,0.d0)) - E)/Fen
             !
             u1(:,:,0) = u1(:,:,0) + factor * dreal(force1(:,:,1))
             u2(:,:,0) = u2(:,:,0) + factor * dreal(force2(:,:,1))
@@ -426,6 +422,56 @@ module solution
                 call listwrite(hand_fo,factor,E,energy,Fen)
             endif
             !
+        elseif(forcemethod == 5) then
+            ! Linear forcing in a band of wave numbers in spectral space
+            dk = 0.5d0
+            !
+            u1spe(:,:,1)=CMPLX(u1(:,:,0),0.d0,C_INTPTR_T);
+            u2spe(:,:,1)=CMPLX(u2(:,:,0),0.d0,C_INTPTR_T);
+            !
+            call fft2d(u1spe)
+            call fft2d(u2spe)
+            !
+            do j=1,jm
+            do i=1,im
+                kk=dsqrt(k1(i,j,0)**2+k2(i,j,0)**2)
+                !
+                if((kk - dk)<forcek .and. (kk + dk)>forcek) then
+                    force1(i,j,1) = u1spe(i,j,1)
+                    force2(i,j,1) = u2spe(i,j,1)
+                else
+                    force1(i,j,1) = 0.d0
+                    force2(i,j,1) = 0.d0
+                endif
+            end do
+            end do
+            !
+            call ifft2d(force1)
+            call ifft2d(force2)
+            !
+            energy = 0.d0
+            E = 0.d0
+            do j=1,jm
+            do i=1,im
+                E = E + dreal(force1(i,j,1))**2 + dreal(force2(i,j,1))**2
+                energy = energy + (u1(i,j,0)**2 + u2(i,j,0)**2)
+            end do
+            end do
+            E = psum(E)/(ia*ja)
+            energy = psum(energy)/(ia*ja)
+            if(target_energy>energy)then
+                factor = dsqrt((target_energy-energy)/E+1.d0)-1.d0
+            else
+                factor = 0.d0
+            endif
+            !
+            u1(:,:,0) = u1(:,:,0) + factor * dreal(force1(:,:,1))
+            u2(:,:,0) = u2(:,:,0) + factor * dreal(force2(:,:,1))
+            !
+            if (lio) then
+                call listwrite(hand_fo,factor,E)
+            endif
+            !
         endif
     end subroutine forcing2D
     !
@@ -435,6 +481,7 @@ module solution
         implicit none
         !
         integer, intent(in) :: hand_fo
+        real(8), parameter :: PI = 3.14159265358979323846d0
         integer :: i,j,k
         real(8) :: energy, factor
         real(8) :: kk,dk,E
@@ -931,7 +978,7 @@ module solution
                           + 2.d0 * u2(i,j,0) * div * dreal(u2xixi(i,j,1)) &
                           + (u1(i,j,0)**2 + u2(i,j,0)**2) * dreal(thetaxixi(i,j,1))
             epsilon = epsilon + nu * (dreal(u1x2(i,j,1)) - dreal(u2x1(i,j,1)))**2 &
-                              + 4.d0/3.d0 * nu * div**2
+                              + nu * div**2
             eta_min = min(eta_min, dsqrt(nu/abs(div)))
             urms = urms+ u1(i,j,0)**2 + u2(i,j,0)**2
             dudx2 = dudx2 + dreal(u1x1(i,j,1))**2 + dreal(u2x2(i,j,1))**2

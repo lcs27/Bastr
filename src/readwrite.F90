@@ -113,10 +113,11 @@ module readwrite
   !
   subroutine read_initial_field
     !
-    use commvar, only : ndims
     character(len=256) :: infilename      ! Name of the input HDF5 file
     integer :: ierr                      ! Error code for MPI operations
     character(len=1) :: modeio           ! Mode for HDF5 read operations
+    real(8), parameter :: PI = 3.14159265358979323846d0
+    integer :: i,j
     !
     if(initialmethod==0)then
       u1=0.d0
@@ -149,6 +150,32 @@ module readwrite
       case default
         error stop 'ndims should be 2 or 3!'
       end select
+    else if(initialmethod==2)then
+      select case(ndims)
+      case(2)
+        do j=1,jm
+        do i=1,im
+          u1(i,j,0)= sin(2*PI*(i+ig0)/ia)*cos(2*PI*(j+jg0)/ja)
+          u2(i,j,0)= -cos(2*PI*(i+ig0)/ia)*sin(2*PI*(j+jg0)/ja)
+        enddo
+        enddo
+      case default
+        error stop 'ndims should be 2!'
+      end select
+    else if(initialmethod==3)then
+      select case(ndims)
+      case(2)
+        do j=1,jm
+        do i=1,im
+          u1(i,j,0)= sin(2*PI*(i+ig0)/ia)*sin(2*PI*(j+jg0)/ja)
+          u2(i,j,0)= -cos(2*PI*(i+ig0)/ia)*cos(2*PI*(j+jg0)/ja)
+        enddo
+        enddo
+      case default
+        error stop 'ndims should be 2!'
+      end select
+    else
+      error stop 'read_initial_field: Not proper initial method'
     endif
   !
   end subroutine read_initial_field
