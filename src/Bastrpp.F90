@@ -17,6 +17,7 @@ program Bastrpp
   !
   character(len=16) :: cmd
   integer :: thefilenumb
+  real(8) :: scale
   !
   call mpiinitial
   !
@@ -67,6 +68,13 @@ program Bastrpp
     call create_initial_field_2d
   elseif(trim(cmd)=='hitgen2dbis')then
     call create_initial_field_2d_bis
+  elseif(trim(cmd)=='scaleinit2d')then
+    if(mpirank == 0) then
+      call readkeyboad(cmd)
+      read(cmd,*) scale
+    endif
+    call bcast(scale)
+    call scale_initial_field_2d(scale)
   else
     if(mpirank==0) print *, ' Unknown pp command!'
   endif
@@ -688,7 +696,50 @@ subroutine create_initial_field_2d_bis
   call h5io_end
   !
   if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
-end subroutine
+end subroutine create_initial_field_2d_bis
+!
+subroutine scale_initial_field_2d(scale)
+  use stlaio,  only: get_unit
+  use hdf5io
+  use commvar
+  use parallel,  only : mpirank,bcast
+  !
+  real(8), intent(in) :: scale
+  character(len=256) :: filename      ! Name of the input HDF5 file
+  integer :: ierr                      ! Error code for MPI operations
+  character(len=1) :: modeio           ! Mode for HDF5 read operations
+  integer :: n,fh,i
+  ! 
+  !
+  ! read field
+  modeio ='h'
+  filename='datin/flowini2d.h5'
+  !
+  ! Initial field read
+  !
+  call h5io_init(filename=filename,mode='read')
+  call h5read(varname='u1', var=u1(1:im,1:jm,0:km),mode = modeio)
+  call h5read(varname='u2', var=u2(1:im,1:jm,0:km),mode = modeio)
+  call h5io_end
+  call mpi_barrier(mpi_comm_world,ierr)
+  if(mpirank==0) print *, ' << ',trim(filename),' ... done'
+  !
+  do i = 1,im
+    do j = 1,jm
+        u1(i,j,0) = scale * u1(i,j,0)
+        u2(i,j,0) = scale * u2(i,j,0)
+    end do
+  end do
+  !
+  filename='datin/flowini2d.'//modeio//'5'
+  !
+  call h5io_init(trim(filename),mode='write')
+  call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode=modeio)
+  call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode=modeio)
+  call h5io_end
+  !
+  if(mpirank==0) print *, ' >> ',trim(filename),' ... done'
+end subroutine scale_initial_field_2d
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 ! End of the pp program
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
