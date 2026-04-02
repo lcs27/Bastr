@@ -64,10 +64,19 @@ program Bastrpp
     endif
     call bcast(thefilenumb) 
     call spectra2d(thefilenumb)
+  elseif(trim(cmd)=='transfer3d')then
+    if(mpirank == 0) then
+      call readkeyboad(cmd)
+      read(cmd,'(i4)') thefilenumb
+    endif
+    call bcast(thefilenumb) 
+    call transfer3d(thefilenumb)
   elseif(trim(cmd)=='hitgen2d')then
     call create_initial_field_2d
   elseif(trim(cmd)=='hitgen2dbis')then
     call create_initial_field_2d_bis
+  elseif(trim(cmd)=='hitgen3d')then
+    call create_initial_field_3d
   elseif(trim(cmd)=='scaleinit2d')then
     if(mpirank == 0) then
       call readkeyboad(cmd)
@@ -406,6 +415,189 @@ subroutine spectra2d(thefilenumb)
   !
 end subroutine spectra2d
 !
+subroutine transfer3d(thefilenumb)
+  use hdf5io
+  use commvar
+  use parallel,  only : mpirank,bcast
+  use solution
+  use utility, only: listinit, listwrite
+  !
+  implicit none
+  integer, intent(in)::thefilenumb
+  character(len=128) :: infilename
+  character(len=4) :: stepname
+  real(8), allocatable :: trans(:,:,:),trans1(:,:,:),trans2(:,:,:)
+  real(8), allocatable :: T(:),T1(:),T2(:)
+  integer :: kOrdinal
+  real(8) :: kk
+  integer :: hand_f, i,j,k
+  !
+  call quantity_prepare
+  !
+  allocate(trans(1:im,1:jm,1:km),trans1(1:im,1:jm,1:km),trans2(1:im,1:jm,1:km))
+  allocate(T(0:allkmax),T1(0:allkmax),T2(0:allkmax))
+  ! read field
+  write(stepname,'(i4.4)')thefilenumb
+  infilename='outdat/flowfield'//stepname//'.h5'
+  !
+  call h5io_init(filename=infilename,mode='read')
+  call h5read(varname='u1', var=u1(1:im,1:jm,1:km),mode = 'h')
+  call h5read(varname='u2', var=u2(1:im,1:jm,1:km),mode = 'h')
+  call h5read(varname='u3', var=u3(1:im,1:jm,1:km),mode = 'h')
+  call h5read(varname='time',var=time)
+  call h5read(varname='nstep', var=nstep)
+  call h5io_end
+  if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
+  !
+  do k=1,km
+  do j=1,jm
+  do i=1,im
+  u1spe(i,j,k)=CMPLX(u1(i,j,k),0.d0,C_INTPTR_T);
+  u2spe(i,j,k)=CMPLX(u2(i,j,k),0.d0,C_INTPTR_T);
+  u3spe(i,j,k)=CMPLX(u3(i,j,k),0.d0,C_INTPTR_T);
+  end do
+  end do
+  enddo
+  !
+  call fft3d(u1spe)
+  call fft3d(u2spe)
+  call fft3d(u3spe)
+  !
+  ! In fourier space
+  u1x1 = imag * u1spe * k1 
+  u1x2 = imag * u1spe * k2
+  u1x3 = imag * u1spe * k3
+  u2x1 = imag * u2spe * k1
+  u2x2 = imag * u2spe * k2
+  u2x3 = imag * u2spe * k3
+  u3x1 = imag * u3spe * k1
+  u3x2 = imag * u3spe * k2
+  u3x3 = imag * u3spe * k3
+  !
+  call ifft3d(u1x1)
+  call ifft3d(u1x2)
+  call ifft3d(u1x3)
+  call ifft3d(u2x1)
+  call ifft3d(u2x2)
+  call ifft3d(u2x3)
+  call ifft3d(u3x1)
+  call ifft3d(u3x2)
+  call ifft3d(u3x3)
+  !
+  call ifft3d(u1spe)
+  call ifft3d(u2spe)
+  call ifft3d(u3spe)
+  !
+  ! In physical spac
+  do k=1,km
+  do j=1,jm
+  do i=1,im
+      !
+      ! uitA = uj \partial ui/ \partial uj
+      u1tA(i,j,k) = - u1spe(i,j,k) * dreal(u1x1(i,j,k)) - u2spe(i,j,k) * dreal(u1x2(i,j,k)) - u3spe(i,j,k) * dreal(u1x3(i,j,k))
+      u2tA(i,j,k) = - u1spe(i,j,k) * dreal(u2x1(i,j,k)) - u2spe(i,j,k) * dreal(u2x2(i,j,k)) - u3spe(i,j,k) * dreal(u2x3(i,j,k)) 
+      u3tA(i,j,k) = - u1spe(i,j,k) * dreal(u3x1(i,j,k)) - u2spe(i,j,k) * dreal(u3x2(i,j,k)) - u3spe(i,j,k) * dreal(u3x3(i,j,k)) 
+      !
+      ! uitC = ui \partial uj/ \partial uj
+      u1tC(i,j,k) = u1spe(i,j,k) * dreal(u1x1(i,j,k) + u2x2(i,j,k) + u3x3(i,j,k))
+      u2tC(i,j,k) = u2spe(i,j,k) * dreal(u1x1(i,j,k) + u2x2(i,j,k) + u3x3(i,j,k))
+      u3tC(i,j,k) = u3spe(i,j,k) * dreal(u1x1(i,j,k) + u2x2(i,j,k) + u3x3(i,j,k))
+      !
+      ! ATTENTION: Reallocation: uixj for uiuj
+      u1x1(i,j,k) = u1spe(i,j,k)*u1spe(i,j,k)
+      u1x2(i,j,k) = u1spe(i,j,k)*u2spe(i,j,k)
+      u1x3(i,j,k) = u1spe(i,j,k)*u3spe(i,j,k)
+      !
+      u2x1(i,j,k) = u2spe(i,j,k)*u1spe(i,j,k)
+      u2x2(i,j,k) = u2spe(i,j,k)*u2spe(i,j,k)
+      u2x3(i,j,k) = u2spe(i,j,k)*u3spe(i,j,k)
+      !
+      u3x1(i,j,k) = u3spe(i,j,k)*u1spe(i,j,k)
+      u3x2(i,j,k) = u3spe(i,j,k)*u2spe(i,j,k)
+      u3x3(i,j,k) = u3spe(i,j,k)*u3spe(i,j,k)
+  end do
+  end do
+  end do
+  !
+  call fft3d(u1tA)
+  call fft3d(u2tA)
+  call fft3d(u3tA)
+  !
+  call fft3d(u1spe)
+  call fft3d(u2spe)
+  call fft3d(u3spe)
+  !
+  call fft3d(u1tC)
+  call fft3d(u2tC)
+  call fft3d(u3tC)
+  !
+  call fft3d(u1x1)
+  call fft3d(u1x2)
+  call fft3d(u1x3)
+  call fft3d(u2x1)
+  call fft3d(u2x2)
+  call fft3d(u2x3)
+  call fft3d(u3x1)
+  call fft3d(u3x2)
+  call fft3d(u3x3)
+  ! In Fourier space
+  !
+  T = 0.d0
+  T1 = 0.d0
+  T2 = 0.d0
+  do k=1,km
+  do j=1,jm
+  do i=1,im
+      !
+      kk=dsqrt(k1(i,j,k)**2+k2(i,j,k)**2+k3(i,j,k)**2)
+      !
+      trans(i,j,k) = dreal(conjg(u1spe(i,j,k))*u1tA(i,j,k)) + dreal(conjg(u2spe(i,j,k))*u2tA(i,j,k)) &
+                    + dreal(conjg(u3spe(i,j,k))*u3tA(i,j,k))
+      !
+      trans1(i,j,k) = dimag(k1(i,j,k)*u1x1(i,j,k)*conjg(u1spe(i,j,k))+&
+                            k2(i,j,k)*u1x2(i,j,k)*conjg(u1spe(i,j,k))+&
+                            k3(i,j,k)*u1x3(i,j,k)*conjg(u1spe(i,j,k))+&
+                            k1(i,j,k)*u2x1(i,j,k)*conjg(u2spe(i,j,k))+&
+                            k2(i,j,k)*u2x2(i,j,k)*conjg(u2spe(i,j,k))+&
+                            k3(i,j,k)*u2x3(i,j,k)*conjg(u2spe(i,j,k))+&
+                            k1(i,j,k)*u3x1(i,j,k)*conjg(u3spe(i,j,k))+&
+                            k2(i,j,k)*u3x2(i,j,k)*conjg(u3spe(i,j,k))+&
+                            k3(i,j,k)*u3x3(i,j,k)*conjg(u3spe(i,j,k)))
+      !
+      trans2(i,j,k) = dreal(conjg(u1spe(i,j,k))*u1tC(i,j,k)) + dreal(conjg(u2spe(i,j,k))*u2tC(i,j,k)) &
+                    + dreal(conjg(u3spe(i,j,k))*u3tC(i,j,k))
+      !
+      kOrdinal = kint(kk,1.d0,2,1.d0)
+      !
+      if(kOrdinal <= allkmax)then
+          T(kOrdinal) = T(kOrdinal) + trans(i,j,k)
+          T1(kOrdinal) = T1(kOrdinal) + trans1(i,j,k)
+          T2(kOrdinal) = T2(kOrdinal) + trans2(i,j,k)
+      endif
+      !
+  end do
+  end do
+  end do
+  !
+  do i=1,allkmax
+      T(i) = psum(T(i))
+      T1(i) = psum(T1(i))
+      T2(i) = psum(T2(i))
+  enddo
+  !
+  if(lio) then
+    print *, "Calculation finish!"
+    infilename='pp/Transfer'//stepname//'.dat'
+    call listinit(filename=infilename,handle=hand_f, &
+                      firstline='ns ti k T T1 T2')
+    do i=1,allkmax
+      call listwrite(hand_f,real(i,8),T(i),T1(i),T2(i))
+    enddo
+    print *, ' << ',trim(infilename),' ... done'
+  endif
+  !
+end subroutine transfer3d
+!
 subroutine create_initial_field_2d
   use hdf5io
   use commvar
@@ -459,7 +651,11 @@ subroutine create_initial_field_2d
     else
       ! ran1: random number distributied in (0,1)
       !
-      var1=kk**4*exp(-2.d0*(kk/forcek)**2)
+      if(kk .ge. forcek)then
+        var1=kk**4*exp(-2.d0*(kk/forcek)**2)
+      else
+        var1=forcek**6 / kk**2 * exp(-2.d0)
+      endif
       var2=sqrt(var1/2.d0/PI/kk)
       !
       random_angle(i,j,0) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
@@ -498,6 +694,118 @@ subroutine create_initial_field_2d
   if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
   !
 end subroutine create_initial_field_2d
+!
+subroutine create_initial_field_3d
+  use hdf5io
+  use commvar
+  use parallel,  only : mpirank,bcast
+  use solution
+  !
+  implicit none
+  character(len=128) :: infilename
+  real(8), parameter :: PI = 3.14159265358979323846d0
+  integer :: hand_f, i,j,k,nseed
+  integer, allocatable :: seed(:)
+  real(8) :: var1,var2
+  real(8) :: rand1,rand2
+  real(8) :: kx,ky,kz,kk,energy,factor
+  !
+  call quantity_prepare
+  !
+  !
+  do k=1,km
+  do j=1,jm
+  do i=1,im
+  u1spe(i,j,k)=CMPLX(0.d0,0.d0,C_INTPTR_T);
+  u2spe(i,j,k)=CMPLX(0.d0,0.d0,C_INTPTR_T);
+  u3spe(i,j,k)=CMPLX(0.d0,0.d0,C_INTPTR_T);
+  end do
+  end do
+  end do
+  !
+  call random_seed(size=nseed)
+  allocate(seed(1:nseed))
+  call system_clock(count=seed(1))
+  do i = 2, nseed
+      seed(i) = seed(i-1) * 1103515245 + 12345
+  end do
+  !
+  call random_seed(put=seed)
+  !
+  deallocate(seed)
+  !
+  call random_number(random_angle)
+  !
+  random_complex(:,:,:) = CMPLX(random_angle(:,:,:),0.d0,C_INTPTR_T)
+  !
+  call fft3d(random_complex)
+  !
+  do k=1,km
+  do j=1,jm
+  do i=1,im
+    kx = k1(i,j,k)
+    ky = k2(i,j,k)
+    kz = k3(i,j,k)
+    kk=dsqrt(kx**2+ky**2+kz**2)
+    if(kx==0 .and. ky==0 .and. kz==0) then
+      u1spe(i,j,k)=0.d0
+      u2spe(i,j,k)=0.d0
+      u3spe(i,j,k)=0.d0
+    else
+      ! ran1: random number distributied in (0,1)
+      !
+      if(kk .ge. forcek)then
+        var1=kk**4*exp(-2.d0*(kk/forcek)**2)
+      else
+        var1=forcek**6 / kk**2 * exp(-2.d0)
+      endif
+      var2=sqrt(var1/4.d0/PI/kk**2)
+      !
+      random_angle(i,j,k) = atan2(aimag(random_complex(i,j,k)),dreal(random_complex(i,j,k))) 
+      u1spe(i,j,k) = var2*kx/kk * CMPLX(sin(random_angle(i,j,k)),cos(random_angle(i,j,k)),C_INTPTR_T)
+      u2spe(i,j,k) = var2*ky/kk * CMPLX(sin(random_angle(i,j,k)),cos(random_angle(i,j,k)),C_INTPTR_T)
+      u3spe(i,j,k) = var2*kz/kk * CMPLX(sin(random_angle(i,j,k)),cos(random_angle(i,j,k)),C_INTPTR_T)
+    end if
+  enddo
+  enddo
+  enddo
+  !
+  call ifft3d(u1spe)
+  call ifft3d(u2spe)
+  call ifft3d(u3spe)
+  !
+  u1(:,:,:) = dreal(u1spe(:,:,:))
+  u2(:,:,:) = dreal(u2spe(:,:,:))
+  u3(:,:,:) = dreal(u3spe(:,:,:))
+  !
+  energy = 0.d0
+  do k=1,km
+  do j=1,jm
+  do i=1,im
+      energy = energy + (u1(i,j,k)**2 + u2(i,j,k)**2 + u3(i,j,k)**2)
+  end do
+  end do
+  end do
+  energy = psum(energy)/(ia*ja*ka)
+  factor = dsqrt(target_energy/energy)
+  !
+  ! scale the field to the target energy
+  u1(:,:,:) = u1(:,:,:) * factor
+  u2(:,:,:) = u2(:,:,:) * factor
+  u3(:,:,:) = u3(:,:,:) * factor
+  !
+  infilename='datin/flowini3d.h5'
+  !
+  call h5io_init(trim(infilename),mode='write')
+  call h5write(varname='u1',var=u1(1:im,1:jm,1:km),mode='h')
+  call h5write(varname='u2',var=u2(1:im,1:jm,1:km),mode='h')
+  call h5write(varname='u3',var=u3(1:im,1:jm,1:km),mode='h')
+  call h5write(varname='random_angle',var=random_angle(1:im,1:jm,1:km),mode='h')
+  call h5io_end
+  !
+  if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
+  !
+end subroutine create_initial_field_3d
 !
 subroutine create_initial_field_2d_bis
   ! This imposes the uiuitheta
@@ -624,12 +932,10 @@ subroutine create_initial_field_2d_bis
   do j=1,jm
   do i=1,im
     QX = QX + (u1A(i,j,1) * u1A(i,j,1) + u2A(i,j,1) * u2A(i,j,1)) * thetaA(i,j,1)
-    QY = QY + (u1B(i,j,1) * u1A(i,j,1) + u2B(i,j,1) * u2A(i,j,1)) * thetaA(i,j,1) + &
-              (u1A(i,j,1) * u1B(i,j,1) + u2A(i,j,1) * u2B(i,j,1)) * thetaA(i,j,1) + &
-              (u1A(i,j,1) * u1A(i,j,1) + u2A(i,j,1) * u2A(i,j,1)) * thetaB(i,j,1)
-    QZ = QZ + (u1B(i,j,1) * u1B(i,j,1) + u2B(i,j,1) * u2B(i,j,1)) * thetaA(i,j,1) + &
-              (u1A(i,j,1) * u1B(i,j,1) + u2A(i,j,1) * u2B(i,j,1)) * thetaB(i,j,1) + &
-              (u1B(i,j,1) * u1A(i,j,1) + u2B(i,j,1) * u2A(i,j,1)) * thetaB(i,j,1)
+    QY = QY + 2 * (u1B(i,j,1) * u1A(i,j,1) + u2B(i,j,1) * u2A(i,j,1)) * thetaA(i,j,1) + &
+                  (u1A(i,j,1) * u1A(i,j,1) + u2A(i,j,1) * u2A(i,j,1)) * thetaB(i,j,1)
+    QZ = QZ + 2 * (u1A(i,j,1) * u1B(i,j,1) + u2A(i,j,1) * u2B(i,j,1)) * thetaB(i,j,1) + &
+                  (u1B(i,j,1) * u1B(i,j,1) + u2B(i,j,1) * u2B(i,j,1)) * thetaA(i,j,1)
     QW = QW + (u1B(i,j,1) * u1B(i,j,1) + u2B(i,j,1) * u2B(i,j,1)) * thetaB(i,j,1)
   enddo
   enddo

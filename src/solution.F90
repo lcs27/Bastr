@@ -38,7 +38,7 @@ module solution
         integer :: i,j
         integer, intent(in) :: hand_f, hand_g, hand_a, hand_fo
         !
-        u1spe(:,:,1) = CMPLX(u1(:,:,0), 0.0d0,C_INTPTR_T);
+        u1spe(:,:,1) = CMPLX(u1(:,:,0), 0.0d0, C_INTPTR_T);
         u2spe(:,:,1) = CMPLX(u2(:,:,0), 0.0d0, C_INTPTR_T);
         !
         call fft2d(u1spe)
@@ -102,6 +102,25 @@ module solution
         integer :: i,j,k
         integer, intent(in) :: hand_f, hand_g, hand_a, hand_fo
         !
+        !
+        u1spe(:,:,:) = CMPLX(u1(:,:,:), 0.0d0,C_INTPTR_T);
+        u2spe(:,:,:) = CMPLX(u2(:,:,:), 0.d0, C_INTPTR_T);
+        u3spe(:,:,:) = CMPLX(u3(:,:,:), 0.d0, C_INTPTR_T);
+        !
+        call fft3d(u1spe)
+        call fft3d(u2spe)
+        call fft3d(u3spe)
+        call dealiasing(u1spe)
+        call dealiasing(u2spe)
+        call dealiasing(u3spe)
+        call ifft3d(u1spe)
+        call ifft3d(u2spe)
+        call ifft3d(u3spe)
+        !
+        u1(:,:,:) = dreal(u1spe(:,:,:))
+        u2(:,:,:) = dreal(u2spe(:,:,:))
+        u3(:,:,:) = dreal(u3spe(:,:,:))
+        !
         do while(nstep<=maxstep)
             !
             u1spe(:,:,:) = CMPLX(u1(:,:,:), 0.0d0,C_INTPTR_T);
@@ -118,9 +137,8 @@ module solution
             !
             if(mpirank==0)  print *, "nstep, Es, Ed, Eall= ", nstep, Esspe, Edspe, &
                                 Esspe+Edspe
-            if(isnan(Esspe+Edspe)) stop '"E" is a NaN'
             !
-            if(lwsequ .and. nstep==nxtwsequ) then
+            if((lwsequ .and. nstep==nxtwsequ) .or. isnan(Esspe+Edspe)) then
                 !
                 call writeflfed
                 !
@@ -132,10 +150,18 @@ module solution
                 !
             endif
             !
+            if(isnan(Esspe+Edspe)) stop '"E" is a NaN'
+            !
             nstep = nstep + 1 
             time = time + deltat
             !
-            call RK33D
+            if(timemethod==1) then
+                call RK33D
+            elseif(timemethod==2) then
+                call CN3D
+            else
+                stop 'mainloop3D: timemethod not recognized!'   
+            endif
             !
             !
             call forcing3D(hand_fo)
@@ -243,6 +269,37 @@ module solution
         !
     end subroutine RK33D
     !
+    subroutine CN3D
+        !
+        implicit none
+        integer :: step
+        !
+        u1old(:,:,:) = u1(:,:,:)
+        u2old(:,:,:) = u2(:,:,:)
+        u3old(:,:,:) = u3(:,:,:)
+        !
+        do step=1,6
+            !
+            call compute_ut(u1tA, u2tA, u3tA)
+            !
+            u1(:,:,:) = u1old(:,:,:) + deltat * dreal(u1tA(:,:,:))
+            u2(:,:,:) = u2old(:,:,:) + deltat * dreal(u2tA(:,:,:))
+            u3(:,:,:) = u3old(:,:,:) + deltat * dreal(u3tA(:,:,:))
+            !
+            if(step==6) exit
+            !
+            u1spe(:,:,:) = CMPLX(0.5 * (u1(:,:,:) + u1old(:,:,:)), 0.d0, C_INTPTR_T)
+            u2spe(:,:,:) = CMPLX(0.5 * (u2(:,:,:) + u2old(:,:,:)), 0.d0, C_INTPTR_T)
+            u3spe(:,:,:) = CMPLX(0.5 * (u3(:,:,:) + u3old(:,:,:)), 0.d0, C_INTPTR_T)
+            !
+            call fft3d(u1spe)
+            call fft3d(u2spe)
+            call fft3d(u3spe)
+            !
+        end do
+        !
+    end subroutine CN3D 
+    !
     subroutine forcing2D(hand_fo)
         use utility, only: listwrite
         implicit none
@@ -253,6 +310,7 @@ module solution
         real(8) :: energy, factor
         real(8) :: kk,dk,E
         real(8) :: Fen, kx, ky
+        complex(8) :: udspe
         !
         if(forcemethod == 1)then
             ! Linear forcing with f_i = (factor-1) * u_i
@@ -437,8 +495,14 @@ module solution
                 kk=dsqrt(k1(i,j,0)**2+k2(i,j,0)**2)
                 !
                 if((kk - dk)<forcek .and. (kk + dk)>forcek) then
-                    force1(i,j,1) = u1spe(i,j,1)
-                    force2(i,j,1) = u2spe(i,j,1)
+                    if(lprojectd)then
+                        udspe = u1spe(i,j,1)*k1(i,j,0)/kk + u2spe(i,j,1)*k2(i,j,0)/kk
+                        force1(i,j,1) = udspe*k1(i,j,0)/kk
+                        force2(i,j,1) = udspe*k2(i,j,0)/kk
+                    else
+                        force1(i,j,1) = u1spe(i,j,1)
+                        force2(i,j,1) = u2spe(i,j,1)
+                    endif
                 else
                     force1(i,j,1) = 0.d0
                     force2(i,j,1) = 0.d0
@@ -485,7 +549,7 @@ module solution
         integer :: i,j,k
         real(8) :: energy, factor
         real(8) :: kk,dk,E
-        real(8) :: Fen,thetax,thetay,thetaz,kx,ky,kz,random_angle
+        real(8) :: Fen,kx,ky,kz
         !
         if(forcemethod == 1)then
             ! Linear forcing with f_i = (factor-1) * u_i
@@ -554,7 +618,7 @@ module solution
             end do
             end do
             E = psum(E)/(ia*ja*ka)
-            factor = max(dsqrt(target_energy/E) - 1.d0, 0.d0)
+            factor = dsqrt(target_energy/E) - 1.d0
             !
             u1(:,:,:) = u1(:,:,:) + factor * dreal(force1(:,:,:))
             u2(:,:,:) = u2(:,:,:) + factor * dreal(force2(:,:,:))
@@ -569,15 +633,11 @@ module solution
             dk = 0.5d0
             !
             !
-            if(mpirank==0)then
-                call random_number(thetax)
-                call random_number(thetay)
-                call random_number(thetaz)
-            endif
+            call random_number(random_angle)
             !
-            call bcast(thetax)
-            call bcast(thetay)
-            call bcast(thetaz)
+            random_complex(:,:,:) = CMPLX(random_angle(:,:,:),0.d0,C_INTPTR_T)
+            !
+            call fft3d(random_complex)
             !
             do k=1,km
             do j=1,jm
@@ -588,10 +648,10 @@ module solution
                 kk=dsqrt(kx**2+ky**2+kz**2)
                 !
                 if((kk - dk)<forcek .and. (kk + dk)>forcek) then
-                    random_angle = (kx*thetax + ky*thetay + kz*thetaz)/kk
-                    force1(i,j,k) = kx/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
-                    force2(i,j,k) = ky/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
-                    force3(i,j,k) = kz/kk * CMPLX(sin(random_angle),cos(random_angle),C_INTPTR_T)
+                    random_angle(i,j,k) = atan2(aimag(random_complex(i,j,k)),dreal(random_complex(i,j,k))) 
+                    force1(i,j,k) = kx/kk * CMPLX(sin(random_angle(i,j,k)),cos(random_angle(i,j,k)),C_INTPTR_T)
+                    force2(i,j,k) = ky/kk * CMPLX(sin(random_angle(i,j,k)),cos(random_angle(i,j,k)),C_INTPTR_T)
+                    force3(i,j,k) = kz/kk * CMPLX(sin(random_angle(i,j,k)),cos(random_angle(i,j,k)),C_INTPTR_T)
                 else
                     force1(i,j,k) = 0.d0
                     force2(i,j,k) = 0.d0
@@ -621,7 +681,7 @@ module solution
             E = psum(E)/(ia*ja*ka)
             energy = psum(energy)/(ia*ja*ka)
             Fen = psum(Fen)/(ia*ja*ka)
-            factor = (dsqrt((target_energy - energy) * Fen + E**2) - E)/Fen
+            factor = (dsqrt(max((target_energy - energy) * Fen + E**2,0.d0)) - E)/Fen
             !
             u1(:,:,:) = u1(:,:,:) + factor * dreal(force1(:,:,:))
             u2(:,:,:) = u2(:,:,:) + factor * dreal(force2(:,:,:))
@@ -630,7 +690,127 @@ module solution
             if (lio) then
                 call listwrite(hand_fo,factor,E,energy,Fen)
             endif
-        endif ! TODO: implement forcemethod3
+        elseif(forcemethod == 4) then
+            ! Random forcing in a band of wave numbers in spectral space
+            dk = 0.5d0
+            !
+            call random_number(random_angle)
+            !
+            random_complex(:,:,:) = CMPLX(random_angle(:,:,:),0.d0,C_INTPTR_T)
+            !
+            call fft3d(random_complex)
+            !
+            do k=1,km
+            do j=1,jm
+            do i=1,im
+                kx = k1(i,j,k)
+                ky = k2(i,j,k)
+                kz = k3(i,j,k) 
+                kk=dsqrt(kx**2+ky**2+kz**2)
+                !
+                if((kk - dk)<forcek .and. (kk + dk)>forcek) then
+                    random_angle(i,j,k) = atan2(aimag(random_complex(i,j,k)),dreal(random_complex(i,j,k))) 
+                    force1(i,j,k) = kx/kk * CMPLX(sin(random_angle(i,j,k)),cos(random_angle(i,j,k)),C_INTPTR_T)
+                    force2(i,j,k) = ky/kk * CMPLX(sin(random_angle(i,j,k)),cos(random_angle(i,j,k)),C_INTPTR_T)
+                    force3(i,j,k) = kz/kk * CMPLX(sin(random_angle(i,j,k)),cos(random_angle(i,j,k)),C_INTPTR_T)
+                else
+                    force1(i,j,k) = 0.d0
+                    force2(i,j,k) = 0.d0
+                    force3(i,j,k) = 0.d0
+                endif
+            end do
+            end do
+            end do
+            !
+            call ifft3d(force1)
+            call ifft3d(force2)
+            call ifft3d(force3)
+            !
+            E = 0.d0
+            energy = 0.d0
+            Fen = 0.d0
+            do k=1,km
+            do j=1,jm
+            do i=1,im
+                E = E + dreal(force1(i,j,k)) * u1(i,j,k) + dreal(force2(i,j,k)) * u2(i,j,k) + &
+                dreal(force3(i,j,k)) * u3(i,j,k)
+                energy = energy + (u1(i,j,k)**2 + u2(i,j,k)**2 + u3(i,j,k)**2)
+                Fen = Fen + dreal(force1(i,j,k))**2 + dreal(force2(i,j,k))**2 + dreal(force3(i,j,k))**2
+            end do
+            end do
+            end do
+            E = psum(E)/(ia*ja*ka)
+            energy = psum(energy)/(ia*ja*ka)
+            Fen = psum(Fen)/(ia*ja*ka)
+            factor = target_energy
+            !
+            u1(:,:,:) = u1(:,:,:) + factor * dreal(force1(:,:,:))
+            u2(:,:,:) = u2(:,:,:) + factor * dreal(force2(:,:,:))
+            u3(:,:,:) = u3(:,:,:) + factor * dreal(force3(:,:,:))
+            !
+            if (lio) then
+                call listwrite(hand_fo,factor,E,energy,Fen)
+            endif
+        elseif(forcemethod == 5) then
+            ! Linear forcing in a band of wave numbers in spectral space
+            dk = 0.5d0
+            !
+            u1spe(:,:,:)=CMPLX(u1(:,:,:),0.d0,C_INTPTR_T);
+            u2spe(:,:,:)=CMPLX(u2(:,:,:),0.d0,C_INTPTR_T);
+            u3spe(:,:,:)=CMPLX(u3(:,:,:),0.d0,C_INTPTR_T);
+            !
+            call fft3d(u1spe)
+            call fft3d(u2spe)
+            call fft3d(u3spe)
+            !
+            do k=1,km
+            do j=1,jm
+            do i=1,im
+                kk=dsqrt(k1(i,j,k)**2+k2(i,j,k)**2+k3(i,j,k)**2)
+                !
+                if((kk - dk)<forcek .and. (kk + dk)>forcek) then
+                    force1(i,j,k) = u1spe(i,j,k)
+                    force2(i,j,k) = u2spe(i,j,k)
+                    force3(i,j,k) = u3spe(i,j,k)
+                else
+                    force1(i,j,k) = 0.d0
+                    force2(i,j,k) = 0.d0
+                    force3(i,j,k) = 0.d0
+                endif
+            end do
+            end do
+            end do
+            !
+            call ifft2d(force1)
+            call ifft2d(force2)
+            call ifft3d(force3)
+            !
+            energy = 0.d0
+            E = 0.d0
+            do k=1,km
+            do j=1,jm
+            do i=1,im
+                E = E + dreal(force1(i,j,k))**2 + dreal(force2(i,j,k))**2 + dreal(force3(i,j,k))**2
+                energy = energy + (u1(i,j,k)**2 + u2(i,j,k)**2 + u3(i,j,k)**2)
+            end do
+            end do
+            end do
+            E = psum(E)/(ia*ja*ka)
+            energy = psum(energy)/(ia*ja*ka)
+            if(target_energy>energy)then
+                factor = dsqrt((target_energy-energy)/E+1.d0)-1.d0
+            else
+                factor = 0.d0
+            endif
+            !
+            u1(:,:,:) = u1(:,:,:) + factor * dreal(force1(:,:,:))
+            u2(:,:,:) = u2(:,:,:) + factor * dreal(force2(:,:,:))
+            u3(:,:,:) = u3(:,:,:) + factor * dreal(force3(:,:,:))
+            !
+            if (lio) then
+                call listwrite(hand_fo,factor,E)
+            endif
+        endif
     end subroutine forcing3D
     !
     subroutine compute_ut2D(u1t, u2t)
@@ -1077,7 +1257,7 @@ module solution
             epsilon = epsilon + nu * (dreal(u1x2(i,j,k)) - dreal(u2x1(i,j,k)))**2 &
                               + nu * (dreal(u2x3(i,j,k)) - dreal(u3x2(i,j,k)))**2 &
                               + nu * (dreal(u1x3(i,j,k)) - dreal(u3x1(i,j,k)))**2 &
-                              + 4.d0/3.d0 * nu * div**2
+                              + nu * div**2
             eta_min = min(eta_min, dsqrt(nu/abs(div)))
             urms = urms+ u1(i,j,k)**2 + u2(i,j,k)**2 + u3(i,j,k)**2
             dudx2 = dudx2 + dreal(u1x1(i,j,k))**2 + dreal(u2x2(i,j,k))**2 + dreal(u3x3(i,j,k))**2

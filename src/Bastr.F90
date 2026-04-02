@@ -5,8 +5,6 @@
 !!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!
 program Bastr
   !
-  ! TODO: To test adaptation for 3D
-  !       - 3D to be tested
   use commvar
   use parallel
   use fftwlink
@@ -79,8 +77,19 @@ program Bastr
                       firstline='ns ti umumtheta2 umumijji u2theta dissp etamin Tay ReTay Kol')
     end select
     if(forcemethod>0) then
-      call listinit(filename='log/factor_output.dat',handle=hand_fo, &
+      if(forcemethod==1)then
+        call listinit(filename='log/factor_output.dat',handle=hand_fo, &
                       firstline='ns ti factor')
+      elseif(forcemethod==2 .or. forcemethod==5)then
+        call listinit(filename='log/factor_output.dat',handle=hand_fo, &
+                      firstline='ns ti factor E')
+      elseif(forcemethod==3 .or. forcemethod==4)then
+        call listinit(filename='log/factor_output.dat',handle=hand_fo, &
+                      firstline='ns ti factor FU UU FF')
+      else
+        call listinit(filename='log/factor_output.dat',handle=hand_fo, &
+                      firstline='ns ti factor')
+      endif
       call random_seed(size=nseed)
       allocate(seed(1:nseed))
       call system_clock(count=seed(1))

@@ -447,16 +447,22 @@ module fftwlink
         call allocate_fftw_complex(u1tA,     c_u1tA)
         call allocate_fftw_complex(u2tA,     c_u2tA)
         call allocate_fftw_complex(u3tA,     c_u3tA)
-        call allocate_fftw_complex(u1tB,     c_u1tB)
-        call allocate_fftw_complex(u2tB,     c_u2tB)
-        call allocate_fftw_complex(u3tB,     c_u3tB)
-        call allocate_fftw_complex(u1tC,     c_u1tC)
-        call allocate_fftw_complex(u2tC,     c_u2tC)
-        call allocate_fftw_complex(u3tC,     c_u3tC)
         call allocate_fftw_complex(force1,   c_force1)
         call allocate_fftw_complex(force2,   c_force2)
         call allocate_fftw_complex(force3,   c_force3)
         call allocate_fftw_complex(random_complex, c_randomcomplex)
+        if(timemethod==1)then
+            call allocate_fftw_complex(u1tB,     c_u1tB)
+            call allocate_fftw_complex(u2tB,     c_u2tB)
+            call allocate_fftw_complex(u3tB,     c_u3tB)
+            call allocate_fftw_complex(u1tC,     c_u1tC)
+            call allocate_fftw_complex(u2tC,     c_u2tC)
+            call allocate_fftw_complex(u3tC,     c_u3tC)
+        elseif(timemethod==2)then
+            allocate(u1old(1:im,1:jm,1:km), u2old(1:im,1:jm,1:km), u3old(1:im,1:jm,1:km))
+        else
+            stop 'allocation3D: timemethod not recognized!'
+        endif
         !
     end subroutine allocation3D
     !
@@ -508,16 +514,20 @@ module fftwlink
         call fftw_free(c_u1tA)
         call fftw_free(c_u2tA)
         call fftw_free(c_u3tA)
-        call fftw_free(c_u1tB)
-        call fftw_free(c_u2tB)
-        call fftw_free(c_u3tB)
-        call fftw_free(c_u1tC)
-        call fftw_free(c_u2tC)
-        call fftw_free(c_u3tC)
         call fftw_free(c_force1)
         call fftw_free(c_force2)
         call fftw_free(c_force3)
         call fftw_free(c_randomcomplex)
+        if(timemethod==1)then
+            call fftw_free(c_u1tB)
+            call fftw_free(c_u2tB)
+            call fftw_free(c_u3tB)
+            call fftw_free(c_u1tC)
+            call fftw_free(c_u2tC)
+            call fftw_free(c_u3tC)
+        elseif(timemethod==2)then
+            deallocate(u1old,u2old,u3old)
+        endif
     end subroutine deallocation3D
     !
     subroutine deallocation2D
