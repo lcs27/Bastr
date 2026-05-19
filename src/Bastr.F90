@@ -63,16 +63,16 @@ program Bastr
     select case(ndims)
     case(2)
       call listinit(filename='log/stat2d_specall.dat',handle=hand_f, &
-                      firstline='ns ti Es Ed k2Ed kMEd')
+                      firstline='ns ti Es Ed Ep k2Ed kMEd')
       call listinit(filename='log/stat2d_spect.dat',handle=hand_g, &
-                      firstline='ns ti k Es Ed')
+                      firstline='ns ti k Es Ed Ep')
       call listinit(filename='log/stat2d_velgrad.dat',handle=hand_a, &
                       firstline='ns ti umumtheta2 umumijji u2theta dissp etamin Tay ReTay Kol')
     case(3)
       call listinit(filename='log/stat3d_specall.dat',handle=hand_f, &
-                      firstline='ns ti Es Ed k2Ed kMEd')
+                      firstline='ns ti Es Ed Ep k2Ed kMEd')
       call listinit(filename='log/stat3d_spect.dat',handle=hand_g, &
-                      firstline='ns ti k Es Ed')
+                      firstline='ns ti k Es Ed Ep')
       call listinit(filename='log/stat3d_velgrad.dat',handle=hand_a, &
                       firstline='ns ti umumtheta2 umumijji u2theta dissp etamin Tay ReTay Kol')
     end select

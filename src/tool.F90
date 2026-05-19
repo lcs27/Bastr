@@ -185,7 +185,7 @@ module tool
         cutoff = floor(real(ia, 8) / real(factor, 8))
         do j=1,jm
         do i=1,im
-            k = dsqrt(k1(i,j,0)**2 + k2(i,j,0)**2)
+            k = dsqrt(k1(i,j,1)**2 + k2(i,j,1)**2)
             if (k >= cutoff) then
                 field(i,j,1) = 0.d0
             end if
@@ -226,14 +226,14 @@ module tool
         !
         do j=1,jm
         do i=1,im
-            kk=dsqrt(k1(i,j,0)**2+k2(i,j,0)**2)
+            kk=dsqrt(k1(i,j,1)**2+k2(i,j,1)**2)
             if(kk>0.5d0)then
-                udspe = u1spe(i,j,1)*k1(i,j,0)/kk + u2spe(i,j,1)*k2(i,j,0)/kk
-                u1spe(i,j,1) =  udspe*k1(i,j,0)/kk
-                u2spe(i,j,1) =  udspe*k2(i,j,0)/kk
-                ! usspe = u1spe(i,j,1)*k2(i,j,0)/kk - u2spe(i,j,1)*k1(i,j,0)/kk
-                ! u1spe(i,j,1) = u1spe(i,j,1) - usspe*k2(i,j,0)/kk
-                ! u2spe(i,j,1) = u2spe(i,j,1) + usspe*k1(i,j,0)/kk
+                udspe = u1spe(i,j,1)*k1(i,j,1)/kk + u2spe(i,j,1)*k2(i,j,1)/kk
+                u1spe(i,j,1) =  udspe*k1(i,j,1)/kk
+                u2spe(i,j,1) =  udspe*k2(i,j,1)/kk
+                ! usspe = u1spe(i,j,1)*k2(i,j,1)/kk - u2spe(i,j,1)*k1(i,j,1)/kk
+                ! u1spe(i,j,1) = u1spe(i,j,1) - usspe*k2(i,j,1)/kk
+                ! u2spe(i,j,1) = u2spe(i,j,1) + usspe*k1(i,j,1)/kk
             else
                 u1spe(i,j,1) = 0.d0
                 u2spe(i,j,1) = 0.d0

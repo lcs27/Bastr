@@ -24,8 +24,7 @@ module commvar
   character(len=10) :: turbmode
   complex(8) :: imag = CMPLX(0.d0,1.d0,8)
   !
-  real(8), allocatable, dimension(:,:,:) :: u1, u2, u3
-  real(8), allocatable, dimension(:,:,:) :: u1old, u2old, u3old
+  real(8), allocatable, dimension(:,:,:) :: u1, u2, u3, prs
   real(8), allocatable, dimension(:,:,:) :: k1,k2,k3
   !
   !
@@ -36,8 +35,8 @@ module commvar
   ! Middle process for ut calculate
   type(C_PTR) :: c_u1spe, c_u2spe, c_u3spe, c_u1x1, c_u1x2, c_u1x3, &
                  c_u2x1, c_u2x2, c_u2x3, c_u3x1, c_u3x2, c_u3x3,    &
-                 c_u1xixi, c_u2xixi, c_u3xixi, c_thetaxixi
-  complex(c_double_complex), pointer, dimension(:,:,:):: &
+                 c_u1xixi, c_u2xixi, c_u3xixi, c_thetaxixi, c_prs
+  complex(c_double_complex), pointer, dimension(:,:,:):: prsspe, &
                 u1spe, u2spe, u3spe, u1x1, u1x2, u1x3, u2x1, u2x2, u2x3,&
                 u3x1, u3x2, u3x3, u1xixi, u2xixi, u3xixi, thetaxixi
   real(8) :: eta_min
@@ -48,11 +47,13 @@ module commvar
   complex(c_double_complex), pointer, dimension(:,:,:):: &
                  u1tA, u2tA, u3tA, u1tB, u2tB, u3tB, u1tC, u2tC, u3tC, &
                  force1, force2, force3, random_complex
+  complex(8), allocatable, dimension(:,:,:):: prstA,prstB,prstC,prstemp
   real(8), allocatable, dimension(:,:,:) :: random_angle
   !
-  real(8), allocatable, dimension(:) :: Es,Ed,kn
+  real(8), allocatable, dimension(:) :: Es,Ed,Ep,kn
+  real(8) :: rho0,c0
   integer, allocatable, dimension(:) :: Ecount
-  real(8) :: Esspe, Edspe
+  real(8) :: Esspe, Edspe, Epspe
   integer :: allkmax
   !
   logical :: lprojectd

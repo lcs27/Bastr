@@ -108,8 +108,8 @@ subroutine add_field_2d
   character(len=64) :: inputfile
   integer :: n,fh,i
   !
-  allocate(u1A(1:im,1:jm,0:km), u2A(1:im,1:jm,0:km), &
-            u1B(1:im,1:jm,0:km), u2B(1:im,1:jm,0:km))
+  allocate(u1A(1:im,1:jm,1:1), u2A(1:im,1:jm,1:1), &
+            u1B(1:im,1:jm,1:1), u2B(1:im,1:jm,1:1))
   ! 
   !
   if(mpirank==0) then
@@ -138,8 +138,8 @@ subroutine add_field_2d
   ! Initial field read
   !
   call h5io_init(filename=infilename,mode='read')
-  call h5read(varname='u1', var=u1A(1:im,1:jm,0:km),mode = modeio)
-  call h5read(varname='u2', var=u2A(1:im,1:jm,0:km),mode = modeio)
+  call h5read(varname='u1', var=u1A(1:im,1:jm,1:1),mode = modeio)
+  call h5read(varname='u2', var=u2A(1:im,1:jm,1:1),mode = modeio)
   call h5io_end
   call mpi_barrier(mpi_comm_world,ierr)
   if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
@@ -147,24 +147,24 @@ subroutine add_field_2d
   infilename='datin/flowini2dB.h5'
   !
   call h5io_init(filename=infilename,mode='read')
-  call h5read(varname='u1', var=u1B(1:im,1:jm,0:km),mode = modeio)
-  call h5read(varname='u2', var=u2B(1:im,1:jm,0:km),mode = modeio)
+  call h5read(varname='u1', var=u1B(1:im,1:jm,1:1),mode = modeio)
+  call h5read(varname='u2', var=u2B(1:im,1:jm,1:1),mode = modeio)
   call h5io_end
   call mpi_barrier(mpi_comm_world,ierr)
   if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
   !
   do i = 1,im
     do j = 1,jm
-        u1(i,j,0) = cA * u1A(i,j,0) + cB * u1B(i,j,0)
-        u2(i,j,0) = cA * u2A(i,j,0) + cB * u2B(i,j,0)
+        u1(i,j,1) = cA * u1A(i,j,1) + cB * u1B(i,j,1)
+        u2(i,j,1) = cA * u2A(i,j,1) + cB * u2B(i,j,1)
     end do
   end do
   !
   infilename='datin/sumfield.'//modeio//'5'
   !
   call h5io_init(trim(infilename),mode='write')
-  call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode=modeio)
-  call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode=modeio)
+  call h5write(varname='u1',var=u1(1:im,1:jm,1:1),mode=modeio)
+  call h5write(varname='u2',var=u2(1:im,1:jm,1:1),mode=modeio)
   call h5io_end
   !
   if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
@@ -190,15 +190,15 @@ subroutine transfer2d(thefilenumb)
   !
   call quantity_prepare
   !
-  allocate(trans(1:im,1:jm,0:km),trans1(1:im,1:jm,0:km),trans2(1:im,1:jm,0:km))
+  allocate(trans(1:im,1:jm,1:1),trans1(1:im,1:jm,1:1),trans2(1:im,1:jm,1:1))
   allocate(T(0:allkmax),T1(0:allkmax),T2(0:allkmax))
   ! read field
   write(stepname,'(i4.4)')thefilenumb
   infilename='outdat/flowfield'//stepname//'.h5'
   !
   call h5io_init(filename=infilename,mode='read')
-  call h5read(varname='u1', var=u1(1:im,1:jm,0:km),mode = 'h')
-  call h5read(varname='u2', var=u2(1:im,1:jm,0:km),mode = 'h')
+  call h5read(varname='u1', var=u1(1:im,1:jm,1:1),mode = 'h')
+  call h5read(varname='u2', var=u2(1:im,1:jm,1:1),mode = 'h')
   call h5read(varname='time',var=time)
   call h5read(varname='nstep', var=nstep)
   call h5io_end
@@ -206,8 +206,8 @@ subroutine transfer2d(thefilenumb)
   !
   do j=1,jm
   do i=1,im
-  u1spe(i,j,1)=CMPLX(u1(i,j,0),0.d0,C_INTPTR_T);
-  u2spe(i,j,1)=CMPLX(u2(i,j,0),0.d0,C_INTPTR_T);
+  u1spe(i,j,1)=CMPLX(u1(i,j,1),0.d0,C_INTPTR_T);
+  u2spe(i,j,1)=CMPLX(u2(i,j,1),0.d0,C_INTPTR_T);
   end do
   end do
   !
@@ -265,21 +265,21 @@ subroutine transfer2d(thefilenumb)
   do j=1,jm
   do i=1,im
       !
-      kk=dsqrt(k1(i,j,0)**2+k2(i,j,0)**2)
+      kk=dsqrt(k1(i,j,1)**2+k2(i,j,1)**2)
       !
-      trans(i,j,0) = dreal(conjg(u1spe(i,j,1))*u1tA(i,j,1)) + dreal(conjg(u2spe(i,j,1))*u2tA(i,j,1))
-      trans1(i,j,0) = dimag(k1(i,j,0)*u1x1(i,j,1)*conjg(u1spe(i,j,1))+&
-                            k2(i,j,0)*u1x2(i,j,1)*conjg(u1spe(i,j,1))+&
-                            k1(i,j,0)*u2x1(i,j,1)*conjg(u2spe(i,j,1))+&
-                            k2(i,j,0)*u2x2(i,j,1)*conjg(u2spe(i,j,1)))
-      trans2(i,j,0) = dreal(conjg(u1spe(i,j,1))*u1tC(i,j,1)) + dreal(conjg(u2spe(i,j,1))*u2tC(i,j,1))
+      trans(i,j,1) = dreal(conjg(u1spe(i,j,1))*u1tA(i,j,1)) + dreal(conjg(u2spe(i,j,1))*u2tA(i,j,1))
+      trans1(i,j,1) = dimag(k1(i,j,1)*u1x1(i,j,1)*conjg(u1spe(i,j,1))+&
+                            k2(i,j,1)*u1x2(i,j,1)*conjg(u1spe(i,j,1))+&
+                            k1(i,j,1)*u2x1(i,j,1)*conjg(u2spe(i,j,1))+&
+                            k2(i,j,1)*u2x2(i,j,1)*conjg(u2spe(i,j,1)))
+      trans2(i,j,1) = dreal(conjg(u1spe(i,j,1))*u1tC(i,j,1)) + dreal(conjg(u2spe(i,j,1))*u2tC(i,j,1))
       !
       kOrdinal = kint(kk,1.d0,2,1.d0)
       !
       if(kOrdinal <= allkmax)then
-          T(kOrdinal) = T(kOrdinal) + trans(i,j,0)
-          T1(kOrdinal) = T1(kOrdinal) + trans1(i,j,0)
-          T2(kOrdinal) = T2(kOrdinal) + trans2(i,j,0)
+          T(kOrdinal) = T(kOrdinal) + trans(i,j,1)
+          T1(kOrdinal) = T1(kOrdinal) + trans1(i,j,1)
+          T2(kOrdinal) = T2(kOrdinal) + trans2(i,j,1)
       endif
       !
   end do
@@ -329,8 +329,8 @@ subroutine spectra2d(thefilenumb)
   infilename='outdat/flowfield'//stepname//'.h5'
   !
   call h5io_init(filename=infilename,mode='read')
-  call h5read(varname='u1', var=u1(1:im,1:jm,0:km),mode = 'h')
-  call h5read(varname='u2', var=u2(1:im,1:jm,0:km),mode = 'h')
+  call h5read(varname='u1', var=u1(1:im,1:jm,1:1),mode = 'h')
+  call h5read(varname='u2', var=u2(1:im,1:jm,1:1),mode = 'h')
   call h5read(varname='time',var=time)
   call h5read(varname='nstep', var=nstep)
   call h5io_end
@@ -338,8 +338,8 @@ subroutine spectra2d(thefilenumb)
   !
   do j=1,jm
   do i=1,im
-  u1spe(i,j,1)=CMPLX(u1(i,j,0),0.d0,C_INTPTR_T);
-  u2spe(i,j,1)=CMPLX(u2(i,j,0),0.d0,C_INTPTR_T);
+  u1spe(i,j,1)=CMPLX(u1(i,j,1),0.d0,C_INTPTR_T);
+  u2spe(i,j,1)=CMPLX(u2(i,j,1),0.d0,C_INTPTR_T);
   end do
   end do
   !
@@ -354,14 +354,14 @@ subroutine spectra2d(thefilenumb)
   !
   do j=1,jm
   do i=1,im
-    kk=dsqrt(k1(i,j,0)**2+k2(i,j,0)**2)
+    kk=dsqrt(k1(i,j,1)**2+k2(i,j,1)**2)
     if(kk>dk/2)then
-      usspe = u1spe(i,j,1)*k2(i,j,0)/kk - u2spe(i,j,1)*k1(i,j,0)/kk
-      udspe = u1spe(i,j,1)*k1(i,j,0)/kk + u2spe(i,j,1)*k2(i,j,0)/kk
-      u1d =  udspe*k1(i,j,0)/kk
-      u2d =  udspe*k2(i,j,0)/kk
-      u1s =  usspe*k2(i,j,0)/kk 
-      u2s = -usspe*k1(i,j,0)/kk
+      usspe = u1spe(i,j,1)*k2(i,j,1)/kk - u2spe(i,j,1)*k1(i,j,1)/kk
+      udspe = u1spe(i,j,1)*k1(i,j,1)/kk + u2spe(i,j,1)*k2(i,j,1)/kk
+      u1d =  udspe*k1(i,j,1)/kk
+      u2d =  udspe*k2(i,j,1)/kk
+      u1s =  usspe*k2(i,j,1)/kk 
+      u2s = -usspe*k1(i,j,1)/kk
       kM1Edspe = kM1Edspe + (udspe*dconjg(udspe)) / kk
     else
       usspe = 0
@@ -636,14 +636,14 @@ subroutine create_initial_field_2d
   !
   call random_number(random_angle)
   !
-  random_complex(:,:,1) = CMPLX(random_angle(:,:,0),0.d0,C_INTPTR_T)
+  random_complex(:,:,1) = CMPLX(random_angle(:,:,1),0.d0,C_INTPTR_T)
   !
   call fft2d(random_complex)
   !
   do j=1,jm
   do i=1,im
-    kx = k1(i,j,0)
-    ky = k2(i,j,0)
+    kx = k1(i,j,1)
+    ky = k2(i,j,1)
     kk=dsqrt(kx**2+ky**2)
     if(kx==0 .and. ky==0) then
       u1spe(i,j,1)=0.d0
@@ -658,9 +658,9 @@ subroutine create_initial_field_2d
       endif
       var2=sqrt(var1/2.d0/PI/kk)
       !
-      random_angle(i,j,0) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
-      u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
-      u2spe(i,j,1) = var2*ky/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+      random_angle(i,j,1) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
+      u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,1)),cos(random_angle(i,j,1)),C_INTPTR_T)
+      u2spe(i,j,1) = var2*ky/kk * CMPLX(sin(random_angle(i,j,1)),cos(random_angle(i,j,1)),C_INTPTR_T)
     end if
   enddo
   enddo
@@ -668,27 +668,27 @@ subroutine create_initial_field_2d
   call ifft2d(u1spe)
   call ifft2d(u2spe)
   !
-  u1(:,:,0) = dreal(u1spe(:,:,1))
-  u2(:,:,0) = dreal(u2spe(:,:,1))
+  u1(:,:,1) = dreal(u1spe(:,:,1))
+  u2(:,:,1) = dreal(u2spe(:,:,1))
   !
   energy = 0.d0
   do j=1,jm
   do i=1,im
-      energy = energy + (u1(i,j,0)**2 + u2(i,j,0)**2)
+      energy = energy + (u1(i,j,1)**2 + u2(i,j,1)**2)
   end do
   end do
   energy = psum(energy)/(ia*ja)
   factor = dsqrt(target_energy/energy)
   ! scale the field to the target energy
-  u1(:,:,0) = u1(:,:,0) * factor
-  u2(:,:,0) = u2(:,:,0) * factor
+  u1(:,:,1) = u1(:,:,1) * factor
+  u2(:,:,1) = u2(:,:,1) * factor
   !
   infilename='datin/flowini2d.h5'
   !
   call h5io_init(trim(infilename),mode='write')
-  call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode='h')
-  call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode='h')
-  call h5write(varname='random_angle',var=random_angle(1:im,1:jm,0:km),mode='h')
+  call h5write(varname='u1',var=u1(1:im,1:jm,1:1),mode='h')
+  call h5write(varname='u2',var=u2(1:im,1:jm,1:1),mode='h')
+  call h5write(varname='random_angle',var=random_angle(1:im,1:jm,1:1),mode='h')
   call h5io_end
   !
   if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
@@ -848,14 +848,14 @@ subroutine create_initial_field_2d_bis
   !
   call random_number(random_angle)
   !
-  random_complex(:,:,1) = CMPLX(random_angle(:,:,0),0.d0,C_INTPTR_T)
+  random_complex(:,:,1) = CMPLX(random_angle(:,:,1),0.d0,C_INTPTR_T)
   !
   call fft2d(random_complex)
   !
   do j=1,jm
   do i=1,im
-    kx = k1(i,j,0)
-    ky = k2(i,j,0)
+    kx = k1(i,j,1)
+    ky = k2(i,j,1)
     kk=dsqrt(kx**2+ky**2)
     if(kx==0 .and. ky==0) then
       u1spe(i,j,1)=0.d0
@@ -867,9 +867,9 @@ subroutine create_initial_field_2d_bis
       var1=kk**4*exp(-2.d0*(kk/forcek)**2)
       var2=sqrt(var1/2.d0/PI/kk)
       !
-      random_angle(i,j,0) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
-      u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
-      u2spe(i,j,1) = var2*ky/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+      random_angle(i,j,1) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
+      u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,1)),cos(random_angle(i,j,1)),C_INTPTR_T)
+      u2spe(i,j,1) = var2*ky/kk * CMPLX(sin(random_angle(i,j,1)),cos(random_angle(i,j,1)),C_INTPTR_T)
       thetaspe(i,j,1) = CMPLX(0.d0,1.d0,C_INTPTR_T) * (kx * u1spe(i,j,1) + ky * u2spe(i,j,1))
     end if
   enddo
@@ -888,14 +888,14 @@ subroutine create_initial_field_2d_bis
   !
   call random_number(random_angle)
   !
-  random_complex(:,:,1) = CMPLX(random_angle(:,:,0),0.d0,C_INTPTR_T)
+  random_complex(:,:,1) = CMPLX(random_angle(:,:,1),0.d0,C_INTPTR_T)
   !
   call fft2d(random_complex)
   !
   do j=1,jm
   do i=1,im
-    kx = k1(i,j,0)
-    ky = k2(i,j,0)
+    kx = k1(i,j,1)
+    ky = k2(i,j,1)
     kk=dsqrt(kx**2+ky**2)
     if(kx==0 .and. ky==0) then
       u1spe(i,j,1)=0.d0
@@ -907,9 +907,9 @@ subroutine create_initial_field_2d_bis
       var1=kk**4*exp(-2.d0*(kk/forcek)**2)
       var2=sqrt(var1/2.d0/PI/kk)
       !
-      random_angle(i,j,0) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
-      u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
-      u2spe(i,j,1) = var2*ky/kk * CMPLX(sin(random_angle(i,j,0)),cos(random_angle(i,j,0)),C_INTPTR_T)
+      random_angle(i,j,1) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
+      u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,1)),cos(random_angle(i,j,1)),C_INTPTR_T)
+      u2spe(i,j,1) = var2*ky/kk * CMPLX(sin(random_angle(i,j,1)),cos(random_angle(i,j,1)),C_INTPTR_T)
       thetaspe(i,j,1) = CMPLX(0.d0,1.d0,C_INTPTR_T) * (kx * u1spe(i,j,1) + ky * u2spe(i,j,1))
     end if
   enddo
@@ -976,29 +976,29 @@ subroutine create_initial_field_2d_bis
   call mpi_barrier(mpi_comm_world,ierr)
   !
   ! Summation
-  u1(:,:,0) = u1A(:,:,1) + alpha * u1B(:,:,1)
-  u2(:,:,0) = u2A(:,:,1) + alpha * u2B(:,:,1)
+  u1(:,:,1) = u1A(:,:,1) + alpha * u1B(:,:,1)
+  u2(:,:,1) = u2A(:,:,1) + alpha * u2B(:,:,1)
   !
   ! Normalization
   energy = 0.d0
   do j=1,jm
   do i=1,im
-      energy = energy + (u1(i,j,0)**2 + u2(i,j,0)**2)
+      energy = energy + (u1(i,j,1)**2 + u2(i,j,1)**2)
   end do
   end do
   energy = psum(energy)/(ia*ja)
   factor = dsqrt(target_energy/energy)
   !
   ! scale the field to the target energy
-  u1(:,:,0) = u1(:,:,0) * factor
-  u2(:,:,0) = u2(:,:,0) * factor
+  u1(:,:,1) = u1(:,:,1) * factor
+  u2(:,:,1) = u2(:,:,1) * factor
   !
   infilename='datin/flowini2d.h5'
   !
   call h5io_init(trim(infilename),mode='write')
-  call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode='h')
-  call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode='h')
-  call h5write(varname='random_angle',var=random_angle(1:im,1:jm,0:km),mode='h')
+  call h5write(varname='u1',var=u1(1:im,1:jm,1:1),mode='h')
+  call h5write(varname='u2',var=u2(1:im,1:jm,1:1),mode='h')
+  call h5write(varname='random_angle',var=random_angle(1:im,1:jm,1:1),mode='h')
   call h5io_end
   !
   if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
@@ -1024,24 +1024,24 @@ subroutine scale_initial_field_2d(scale)
   ! Initial field read
   !
   call h5io_init(filename=filename,mode='read')
-  call h5read(varname='u1', var=u1(1:im,1:jm,0:km),mode = modeio)
-  call h5read(varname='u2', var=u2(1:im,1:jm,0:km),mode = modeio)
+  call h5read(varname='u1', var=u1(1:im,1:jm,1:1),mode = modeio)
+  call h5read(varname='u2', var=u2(1:im,1:jm,1:1),mode = modeio)
   call h5io_end
   call mpi_barrier(mpi_comm_world,ierr)
   if(mpirank==0) print *, ' << ',trim(filename),' ... done'
   !
   do i = 1,im
     do j = 1,jm
-        u1(i,j,0) = scale * u1(i,j,0)
-        u2(i,j,0) = scale * u2(i,j,0)
+        u1(i,j,1) = scale * u1(i,j,1)
+        u2(i,j,1) = scale * u2(i,j,1)
     end do
   end do
   !
   filename='datin/flowini2d.'//modeio//'5'
   !
   call h5io_init(trim(filename),mode='write')
-  call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode=modeio)
-  call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode=modeio)
+  call h5write(varname='u1',var=u1(1:im,1:jm,1:1),mode=modeio)
+  call h5write(varname='u2',var=u2(1:im,1:jm,1:1),mode=modeio)
   call h5io_end
   !
   if(mpirank==0) print *, ' >> ',trim(filename),' ... done'
