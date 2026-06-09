@@ -16,7 +16,7 @@ program Bastrpp
   include 'fftw3-mpi.f03'
   !
   character(len=16) :: cmd
-  integer :: thefilenumb
+  integer :: thefilenumb,method
   real(8) :: scale
   !
   call mpiinitial
@@ -72,7 +72,12 @@ program Bastrpp
     call bcast(thefilenumb) 
     call transfer3d(thefilenumb)
   elseif(trim(cmd)=='hitgen2d')then
-    call create_initial_field_2d
+    if(mpirank == 0) then
+      call readkeyboad(cmd)
+      read(cmd,'(i4)') method
+    endif
+    call bcast(method)
+    call create_initial_field_2d(method)
   elseif(trim(cmd)=='hitgen2dbis')then
     call create_initial_field_2d_bis
   elseif(trim(cmd)=='hitgen3d')then
@@ -598,13 +603,14 @@ subroutine transfer3d(thefilenumb)
   !
 end subroutine transfer3d
 !
-subroutine create_initial_field_2d
+subroutine create_initial_field_2d(method)
   use hdf5io
   use commvar
   use parallel,  only : mpirank,bcast
   use solution
   !
   implicit none
+  integer, intent(in):: method
   character(len=128) :: infilename
   real(8), parameter :: PI = 3.14159265358979323846d0
   integer :: hand_f, i,j,nseed
@@ -612,7 +618,10 @@ subroutine create_initial_field_2d
   real(8) :: var1,var2
   real(8) :: rand1,rand2
   real(8) :: kx,ky,kk,energy,factor
+  integer :: kOrdinal
+  real(8) :: dk
   !
+  dk = 1.0d0
   call quantity_prepare
   !
   !
@@ -651,12 +660,27 @@ subroutine create_initial_field_2d
     else
       ! ran1: random number distributied in (0,1)
       !
-      if(kk .ge. forcek)then
-        var1=kk**4*exp(-2.d0*(kk/forcek)**2)
-      else
-        var1=forcek**6 / kk**2 * exp(-2.d0)
-      endif
-      var2=sqrt(var1/2.d0/PI/kk)
+      select case(method)
+        case(0)
+          if(kk .ge. forcek)then
+            var1=kk**4*exp(-2.d0*(kk/forcek)**2)
+          else
+            var1=forcek**6 / kk**2 * exp(-2.d0)
+          endif
+          var2=sqrt(var1/2.d0/PI/kk)
+        case (1)
+          kOrdinal = kint(kk,dk,2,1.d0)
+          if(kOrdinal .le. forcek)then
+            var1 = 1.d0
+          else
+            var1 = 0.d0
+          endif
+          var2=sqrt(var1/2.d0/PI/kOrdinal)
+        case default
+          print *, 'Invalid spectral method!'
+          stop
+      end select
+      
       !
       random_angle(i,j,1) = atan2(aimag(random_complex(i,j,1)),dreal(random_complex(i,j,1))) 
       u1spe(i,j,1) = var2*kx/kk * CMPLX(sin(random_angle(i,j,1)),cos(random_angle(i,j,1)),C_INTPTR_T)

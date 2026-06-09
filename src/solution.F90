@@ -71,7 +71,7 @@ module solution
             call velgrad_calculate2D(hand_a) !TODO: modify
             !
             if(mpirank==0)  print *, "nstep, Es, Ed, Ep, Eall= ", nstep, Esspe, Edspe, Epspe, &
-                                Esspe+Edspe
+                                Esspe+Edspe+Epspe
             !
             if((lwsequ .and. nstep==nxtwsequ) .or. isnan(Esspe+Edspe)) then
                 !
@@ -148,7 +148,7 @@ module solution
             call velgrad_calculate3D(hand_a)
             !
             if(mpirank==0)  print *, "nstep, Es, Ed, Ep, Eall= ", nstep, Esspe, Edspe, Epspe, &
-                                Esspe+Edspe
+                                Esspe+Edspe+Epspe
             !
             if((lwsequ .and. nstep==nxtwsequ) .or. isnan(Esspe+Edspe)) then
                 !
@@ -539,7 +539,7 @@ module solution
             do j=1,jm
             do i=1,im
                 E = E + dreal(force1(i,j,1))**2 + dreal(force2(i,j,1))**2
-                energy = energy + (u1(i,j,1)**2 + u2(i,j,1)**2)
+                energy = energy + (u1(i,j,1)**2 + u2(i,j,1)**2 + prsspe(i,j,1)*conjg(prsspe(i,j,1))/rho0**2/c0**2 * (ia*ja) )
             end do
             end do
             E = psum(E)/(ia*ja)
@@ -554,7 +554,7 @@ module solution
             u2(:,:,1) = u2(:,:,1) + factor * dreal(force2(:,:,1))
             !
             if (lio) then
-                call listwrite(hand_fo,factor,E)
+                call listwrite(hand_fo,factor,E,energy)
             endif
             !
         endif
@@ -812,7 +812,8 @@ module solution
             do j=1,jm
             do i=1,im
                 E = E + dreal(force1(i,j,k))**2 + dreal(force2(i,j,k))**2 + dreal(force3(i,j,k))**2
-                energy = energy + (u1(i,j,k)**2 + u2(i,j,k)**2 + u3(i,j,k)**2)
+                energy = energy + (u1(i,j,k)**2 + u2(i,j,k)**2 + u3(i,j,k)**2 + &
+                prsspe(i,j,k)*conjg(prsspe(i,j,k))/rho0**2/c0**2 * (ia*ja*ka) )
             end do
             end do
             end do
@@ -963,6 +964,7 @@ module solution
         !
         implicit none
         integer, intent(in) :: hand_f, hand_g
+        real(8), parameter :: PI = 3.14159265358979323846d0
         !
         integer :: i, j, kOrdinal
         real(8) :: kk, dk
@@ -1006,9 +1008,9 @@ module solution
             !
             if(kOrdinal <= allkmax)then
                 Ecount(kOrdinal) = Ecount(kOrdinal) + 1
-                Es(kOrdinal) = Es(kOrdinal) + usspe*conjg(usspe)/2
-                Ed(kOrdinal) = Ed(kOrdinal) + udspe*conjg(udspe)/2
-                Ep(kOrdinal) = Ep(kOrdinal) + prsspe(i,j,1)*conjg(prsspe(i,j,1))/2
+                Es(kOrdinal) = Es(kOrdinal) + usspe*conjg(usspe)/2 * 2 * PI * kk
+                Ed(kOrdinal) = Ed(kOrdinal) + udspe*conjg(udspe)/2 * 2 * PI * kk
+                Ep(kOrdinal) = Ep(kOrdinal) + prsspe(i,j,1)*conjg(prsspe(i,j,1))/2 * 2 * PI * kk
                 kn(kOrdinal) = kn(kOrdinal) + kk
             endif
             !
@@ -1023,9 +1025,9 @@ module solution
         !
         do i=1,allkmax
             Ecount(i) = psum(Ecount(i))
-            Es(i) = psum(Es(i))
-            Ed(i) = psum(Ed(i))
-            Ep(i) = psum(Ep(i))/rho0**2/c0**2
+            Es(i) = psum(Es(i))/Ecount(i)
+            Ed(i) = psum(Ed(i))/Ecount(i)
+            Ep(i) = psum(Ep(i))/rho0**2/c0**2/Ecount(i)
             kn(i) =  psum(kn(i))/Ecount(i)
         enddo
         Edspe = psum(Edspe)
