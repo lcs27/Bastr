@@ -35,7 +35,7 @@ module readwrite
       read(fh,'(////)')
       read(fh,*)ia,ja,ka
       read(fh,'(/)')
-      read(fh,*)ref_tem,reynolds
+      read(fh,*)ref_tem,reynolds, rho0, c0
       read(fh,'(/)')
       read(fh,*)maxstep,deltat,lwsequ,feqwsequ,lwspectra,feqwspe,kmax,timemethod
       read(fh,'(/)')
@@ -52,6 +52,8 @@ module readwrite
     call bcast(ka)
     call bcast(ref_tem)
     call bcast(reynolds)
+    call bcast(rho0)
+    call bcast(c0)
     call bcast(lwsequ)
     call bcast(maxstep)
     call bcast(feqwsequ)
@@ -125,6 +127,7 @@ module readwrite
       if(ndims==3)then
         u3=0.d0
       endif
+      prs=0.d0
       if(mpirank==0) print *, ' give void initial velocity field ... done'
     elseif(initialmethod==1)then
       ! read initial field
@@ -133,8 +136,10 @@ module readwrite
       case(2)
         infilename='datin/flowini2d.h5'
         call h5io_init(filename=infilename,mode='read')
-        call h5read(varname='u1', var=u1(1:im,1:jm,0:km),mode = modeio)
-        call h5read(varname='u2', var=u2(1:im,1:jm,0:km),mode = modeio)
+        call h5read(varname='u1', var=u1(1:im,1:jm,1:1),mode = modeio)
+        call h5read(varname='u2', var=u2(1:im,1:jm,1:1),mode = modeio)
+        ! call h5read(varname='prs', var=prs(1:im,1:jm,1:1),mode = modeio)
+        prs=0.d0
         call h5io_end
         call mpi_barrier(mpi_comm_world,ierr)
         if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
@@ -144,6 +149,7 @@ module readwrite
         call h5read(varname='u1', var=u1(1:im,1:jm,1:km),mode = modeio)
         call h5read(varname='u2', var=u2(1:im,1:jm,1:km),mode = modeio)
         call h5read(varname='u3', var=u3(1:im,1:jm,1:km),mode = modeio)
+        call h5read(varname='prs', var=prs(1:im,1:jm,1:km),mode = modeio)
         call h5io_end
         call mpi_barrier(mpi_comm_world,ierr)
         if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
@@ -155,10 +161,11 @@ module readwrite
       case(2)
         do j=1,jm
         do i=1,im
-          u1(i,j,0)= sin(2*PI*(i+ig0)/ia)*cos(2*PI*(j+jg0)/ja)
-          u2(i,j,0)= -cos(2*PI*(i+ig0)/ia)*sin(2*PI*(j+jg0)/ja)
+          u1(i,j,1)= sin(2*PI*(i+ig0)/ia)*cos(2*PI*(j+jg0)/ja)
+          u2(i,j,1)= -cos(2*PI*(i+ig0)/ia)*sin(2*PI*(j+jg0)/ja)
         enddo
         enddo
+        prs=0.d0
       case default
         error stop 'ndims should be 2!'
       end select
@@ -167,10 +174,11 @@ module readwrite
       case(2)
         do j=1,jm
         do i=1,im
-          u1(i,j,0)= sin(2*PI*(i+ig0)/ia)*sin(2*PI*(j+jg0)/ja)
-          u2(i,j,0)= -cos(2*PI*(i+ig0)/ia)*cos(2*PI*(j+jg0)/ja)
+          u1(i,j,1)= sin(2*PI*(i+ig0)/ia)*sin(2*PI*(j+jg0)/ja)
+          u2(i,j,1)= -cos(2*PI*(i+ig0)/ia)*cos(2*PI*(j+jg0)/ja)
         enddo
         enddo
+        prs=0.d0
       case default
         error stop 'ndims should be 2!'
       end select
@@ -198,12 +206,14 @@ module readwrite
     call h5io_init(filename=infilename,mode='read')
     select case(ndims)
     case(2)
-      call h5read(varname='u1', var=u1(1:im,1:jm,0:km),mode = modeio)
-      call h5read(varname='u2', var=u2(1:im,1:jm,0:km),mode = modeio)
+      call h5read(varname='u1', var=u1(1:im,1:jm,1:1),mode = modeio)
+      call h5read(varname='u2', var=u2(1:im,1:jm,1:1),mode = modeio)
+      call h5read(varname='prs', var=prs(1:im,1:jm,1:1),mode = modeio)
     case(3)
       call h5read(varname='u1',var=u1(1:im,1:jm,1:km),mode=modeio)
       call h5read(varname='u2',var=u2(1:im,1:jm,1:km),mode=modeio)
       call h5read(varname='u3',var=u3(1:im,1:jm,1:km),mode=modeio)
+      call h5read(varname='prs', var=prs(1:im,1:jm,1:km),mode = modeio)
     case default
       error stop 'ndims should be 2 or 3!'
     end select
@@ -214,8 +224,8 @@ module readwrite
     if(mpirank==0) print *, ' >> ',trim(infilename),' ... done'
     call h5io_end
     filenumb = filenumb + 1
-    nxtwsequ = min(nstep + feqwsequ, maxstep)
-    nxtwspe = min(nstep + feqwspe, maxstep)
+    nxtwsequ = min(nstep, maxstep)
+    nxtwspe = min(nstep, maxstep)
   !
   end subroutine read_continue_field
   !
@@ -236,12 +246,15 @@ module readwrite
     !
     select case(ndims)
     case(2)
-      call h5write(varname='u1',var=u1(1:im,1:jm,0:km),mode=modeio)
-      call h5write(varname='u2',var=u2(1:im,1:jm,0:km),mode=modeio)
+      call h5write(varname='u1',var=u1(1:im,1:jm,1:1),mode=modeio)
+      call h5write(varname='u2',var=u2(1:im,1:jm,1:1),mode=modeio)
+      call h5write(varname='prs',var=prs(1:im,1:jm,1:1) ,mode=modeio)
     case(3)
       call h5write(varname='u1',var=u1(1:im,1:jm,1:km),mode=modeio)
       call h5write(varname='u2',var=u2(1:im,1:jm,1:km),mode=modeio)
       call h5write(varname='u3',var=u3(1:im,1:jm,1:km),mode=modeio)
+      call h5write(varname='prs',var=prs(1:im,1:jm,1:km) ,mode=modeio)
+      ! TODO: write pressure
     case default
       error stop 'ndims should be 2 or 3!'
     end select

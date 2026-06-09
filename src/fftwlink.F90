@@ -382,7 +382,7 @@ module fftwlink
             stop 'allocation: Not implemented for 1D!'
         end select
         !
-        allocate(Es(0:allkmax),Ed(0:allkmax),kn(0:allkmax),Ecount(0:allkmax))
+        allocate(Es(0:allkmax),Ed(0:allkmax),kn(0:allkmax),Ep(0:allkmax),Ecount(0:allkmax))
         !
     end subroutine allocation
     !
@@ -390,12 +390,15 @@ module fftwlink
         !
         use commvar
         include 'fftw3-mpi.f03'
-        allocate(u1(1:im,1:jm,0:km), u2(1:im,1:jm,0:km))
-        allocate(k1(1:im,1:jm,0:km), k2(1:im,1:jm,0:km))
-        allocate(random_angle(1:im,1:jm,0:km))
+        allocate(u1(1:im,1:jm,1:1), u2(1:im,1:jm,1:1))
+        allocate(prs(1:im,1:jm,1:1))
+        allocate(prstA(1:im,1:jm,1:1),prstB(1:im,1:jm,1:1),prstC(1:im,1:jm,1:1),prstemp(1:im,1:jm,1:1))
+        allocate(k1(1:im,1:jm,1:1), k2(1:im,1:jm,1:1))
+        allocate(random_angle(1:im,1:jm,1:1))
         !
         call allocate_fftw_complex(u1spe, c_u1spe)
         call allocate_fftw_complex(u2spe, c_u2spe)
+        call allocate_fftw_complex(prsspe, c_prs)
         call allocate_fftw_complex(u1x1,   c_u1x1)
         call allocate_fftw_complex(u1x2,   c_u1x2)
         call allocate_fftw_complex(u2x1,   c_u2x1)
@@ -413,8 +416,6 @@ module fftwlink
             call allocate_fftw_complex(u2tB,     c_u2tB)
             call allocate_fftw_complex(u1tC,     c_u1tC)
             call allocate_fftw_complex(u2tC,     c_u2tC)
-        elseif(timemethod==2)then
-            allocate(u1old(1:im,1:jm,0:km), u2old(1:im,1:jm,0:km))
         else
             stop 'allocation2D: timemethod not recognized!'
         endif
@@ -425,12 +426,15 @@ module fftwlink
         use commvar
         include 'fftw3-mpi.f03'
         allocate(u1(1:im,1:jm,1:km), u2(1:im,1:jm,1:km), u3(1:im,1:jm,1:km))
+        allocate(prs(1:im,1:jm,1:km))
+        allocate(prstA(1:im,1:jm,1:km),prstB(1:im,1:jm,1:km),prstC(1:im,1:jm,1:km))
         allocate(k1(1:im,1:jm,1:km), k2(1:im,1:jm,1:km), k3(1:im,1:jm,1:km))
         allocate(random_angle(1:im,1:jm,1:km))
         !
         call allocate_fftw_complex(u1spe, c_u1spe)
         call allocate_fftw_complex(u2spe, c_u2spe)
         call allocate_fftw_complex(u3spe, c_u3spe)
+        call allocate_fftw_complex(prsspe, c_prs)
         call allocate_fftw_complex(u1x1,   c_u1x1)
         call allocate_fftw_complex(u1x2,   c_u1x2)
         call allocate_fftw_complex(u1x3,   c_u1x3)
@@ -458,8 +462,6 @@ module fftwlink
             call allocate_fftw_complex(u1tC,     c_u1tC)
             call allocate_fftw_complex(u2tC,     c_u2tC)
             call allocate_fftw_complex(u3tC,     c_u3tC)
-        elseif(timemethod==2)then
-            allocate(u1old(1:im,1:jm,1:km), u2old(1:im,1:jm,1:km), u3old(1:im,1:jm,1:km))
         else
             stop 'allocation3D: timemethod not recognized!'
         endif
@@ -472,7 +474,7 @@ module fftwlink
         use parallel, only: mpistop
         include 'fftw3-mpi.f03'
         !
-        deallocate(Es, Ed, kn,Ecount)
+        deallocate(Es, Ed,  Ep, kn,Ecount)
         !
         call fftw_destroy_plan(forward_plan)
         call fftw_destroy_plan(backward_plan)
@@ -525,8 +527,6 @@ module fftwlink
             call fftw_free(c_u1tC)
             call fftw_free(c_u2tC)
             call fftw_free(c_u3tC)
-        elseif(timemethod==2)then
-            deallocate(u1old,u2old,u3old)
         endif
     end subroutine deallocation3D
     !
@@ -536,6 +536,7 @@ module fftwlink
         include 'fftw3-mpi.f03'
         !
         deallocate(u1,u2,k1,k2,random_angle)
+        deallocate(prs,prstA,prstB,prstC)
         call fftw_free(c_u1spe)
         call fftw_free(c_u2spe)
         call fftw_free(c_u1x1)
@@ -555,8 +556,6 @@ module fftwlink
             call fftw_free(c_u2tB)
             call fftw_free(c_u1tC)
             call fftw_free(c_u2tC)
-        elseif(timemethod==2)then
-            deallocate(u1old,u2old)
         endif
         !
     end subroutine deallocation2D
