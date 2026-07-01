@@ -328,7 +328,7 @@ module solution
         integer, intent(in) :: hand_fo
         real(8), parameter :: PI = 3.14159265358979323846d0
         integer :: i,j
-        real(8) :: energy, factor
+        real(8) :: energy, penergy, factor
         real(8) :: kk,dk,E
         real(8) :: Fen, kx, ky
         complex(8) :: udspe
@@ -539,7 +539,12 @@ module solution
             do j=1,jm
             do i=1,im
                 E = E + dreal(force1(i,j,1))**2 + dreal(force2(i,j,1))**2
-                energy = energy + (u1(i,j,1)**2 + u2(i,j,1)**2 + prsspe(i,j,1)*conjg(prsspe(i,j,1))/rho0**2/c0**2 * (ia*ja) )
+                if(c0 .ne. 0)then
+                    penergy = prsspe(i,j,1)*conjg(prsspe(i,j,1))/rho0**2/c0**2 * (ia*ja)
+                else
+                    penergy = 0.d0
+                endif
+                energy = energy + (u1(i,j,1)**2 + u2(i,j,1)**2) + penergy
             end do
             end do
             E = psum(E)/(ia*ja)
@@ -568,7 +573,7 @@ module solution
         integer, intent(in) :: hand_fo
         real(8), parameter :: PI = 3.14159265358979323846d0
         integer :: i,j,k
-        real(8) :: energy, factor
+        real(8) :: energy, factor, penergy
         real(8) :: kk,dk,E
         real(8) :: Fen,kx,ky,kz
         !
@@ -812,8 +817,12 @@ module solution
             do j=1,jm
             do i=1,im
                 E = E + dreal(force1(i,j,k))**2 + dreal(force2(i,j,k))**2 + dreal(force3(i,j,k))**2
-                energy = energy + (u1(i,j,k)**2 + u2(i,j,k)**2 + u3(i,j,k)**2 + &
-                prsspe(i,j,k)*conjg(prsspe(i,j,k))/rho0**2/c0**2 * (ia*ja*ka) )
+                if(c0 .ne. 0)then
+                    penergy = prsspe(i,j,k)*conjg(prsspe(i,j,k))/rho0**2/c0**2 * (ia*ja*ka) 
+                else
+                    penergy = 0.d0
+                endif
+                energy = energy + (u1(i,j,k)**2 + u2(i,j,k)**2 + u3(i,j,k)**2) + penergy
             end do
             end do
             end do

@@ -58,11 +58,10 @@ module commvar
   !
   logical :: lprojectd
   real(8) :: target_energy
-  integer :: forcemethod, forcek
+  integer :: forcemethod, forcek, timemethod
   !
   integer :: initialmethod
   !
-  integer :: timemethod
   !
   logical :: lrestart = .false.
   !
