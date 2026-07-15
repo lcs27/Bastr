@@ -662,11 +662,7 @@ subroutine create_initial_field_2d(method)
       !
       select case(method)
         case(0)
-          if(kk .ge. forcek)then
-            var1=kk**4*exp(-2.d0*(kk/forcek)**2)
-          else
-            var1=forcek**6 / kk**2 * exp(-2.d0)
-          endif
+          var1=kk**4*exp(-2.d0*(kk/forcek)**2)
           var2=sqrt(var1/2.d0/PI/kk)
         case (1)
           kOrdinal = kint(kk,dk,2,1.d0)
@@ -676,6 +672,20 @@ subroutine create_initial_field_2d(method)
             var1 = 0.d0
           endif
           var2=sqrt(var1/2.d0/PI/kOrdinal)
+        case(2)
+          if(kk .ge. forcek)then
+            var1=kk**4*exp(-2.d0*(kk/forcek)**2)
+          else
+            var1=forcek**6 / kk**2 * exp(-2.d0)
+          endif
+          var2=sqrt(var1/2.d0/PI/kk)
+        case(3)
+          if(kk .ge. forcek)then
+            var1=kk**4*exp(-2.d0*(kk/forcek)**2)
+          else
+            var1=forcek**4 * exp(-2.d0)
+          endif
+          var2=sqrt(var1/2.d0/PI/kk)
         case default
           print *, 'Invalid spectral method!'
           stop

@@ -149,7 +149,7 @@ module readwrite
         call h5read(varname='u1', var=u1(1:im,1:jm,1:km),mode = modeio)
         call h5read(varname='u2', var=u2(1:im,1:jm,1:km),mode = modeio)
         call h5read(varname='u3', var=u3(1:im,1:jm,1:km),mode = modeio)
-        call h5read(varname='prs', var=prs(1:im,1:jm,1:km),mode = modeio)
+        prs=0.d0
         call h5io_end
         call mpi_barrier(mpi_comm_world,ierr)
         if(mpirank==0) print *, ' << ',trim(infilename),' ... done'
